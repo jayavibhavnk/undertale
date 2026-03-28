@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unifactory</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div id="game-wrapper">
+        <div id="setup-screen">
+            <div class="title-art">
+                <h1>UNIFACTORY</h1>
+                <p class="subtitle">AI-Powered Story RPG</p>
+            </div>
+            <div class="setup-form">
+                <div class="input-group">
+                    <label for="api-key">GEMINI API KEY</label>
+                    <input type="password" id="api-key" placeholder="paste your key here" spellcheck="false">
+                </div>
+                <div class="input-group">
+                    <label for="model-select">MODEL</label>
+                    <select id="model-select">
+                        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite (fast)</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash (smarter)</option>
+                    </select>
+                </div>
+                <button id="start-btn">ENTER THE WORLD</button>
+            </div>
+            <p class="controls-hint">ARROWS move | Z interact | X cancel</p>
+        </div>
+        <div id="game-container" style="display:none;"></div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>
+    <script type="module" src="js/main.js"></script>
+</body>
+</html>
