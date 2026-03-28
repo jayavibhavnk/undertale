@@ -1,0 +1,101 @@
+{
+  "playerName": "dh2",
+  "theme": "medieval",
+  "soulColor": "#0066FF",
+  "soulTrait": "Integrity",
+  "portraitUrl": "http://localhost:8081/api/assets/portraits/69abc250_portrait.png",
+  "endingType": {
+    "id": "genocide",
+    "title": "NO MERCY",
+    "desc": "You left nothing alive."
+  },
+  "endingNarration": {
+    "title": "The Silence of Eldrath",
+    "narration": [
+      "The echo of your blade fades, leaving only the stillness of absolute victory.",
+      "No screams answer the wind, no whispers dare defy your might.",
+      "The Shadow King's reign ended not with a whimper, but with a final, crushing blow.",
+      "Eldrath is saved, but the cost was every soul that stood in your path."
+    ],
+    "epilogue": "With the land cleansed of all life, you stand as the sole, silent ruler of a kingdom reborn in your image."
+  },
+  "roomNumber": 3,
+  "maxRooms": 3,
+  "level": 4,
+  "storySummary": [
+    "Room 1: \"Whispering Woods Edge\" — The wind howls through skeletal trees, carrying the scent of damp earth and forgotten sorrow.",
+    "Defeated enemy \"goblin_scout_1\"",
+    "Room 2: \"Shadowy Archives\" — Dust motes dance in the oppressive gloom, illuminated by faint, flickering arcane energies.",
+    "Completed quest: \"Decipher the Tome\"",
+    "Defeated enemy \"cursed_armor_1\"",
+    "Room 3: \"Throne of Despair\" — The air crackles with dark energy as you stand before the Shadow King, the culmination of your arduous journey.",
+    "Defeated enemy \"shadow_king_boss\"",
+    "Finale: defeated the final enemy"
+  ],
+  "storyLog": [
+    "quest_started:find_lyric",
+    "defeated:goblin_scout_1",
+    "exited:right:Deep Woods",
+    "quest_started:decipher_tome",
+    "picked_up:arcane_tome_page",
+    "found:arcane_tome_page",
+    "quest_complete:decipher_tome",
+    "picked_up:holy_water_vial",
+    "defeated:cursed_armor_1",
+    "picked_up:arcane_tome_page",
+    "found:arcane_tome_page",
+    "exited:right:Deep Archives",
+    "defeated:shadow_king_boss"
+  ],
+  "roomsVisited": [
+    "village_outskirts_1",
+    "shadowy_archives_2",
+    "shadow_king_throne_room_3"
+  ],
+  "uniqueNames": {
+    "rooms": [
+      "Whispering Woods Edge",
+      "Shadowy Archives",
+      "Throne of Despair"
+    ],
+    "npcs": [
+      "Elara",
+      "Borin",
+      "Lorien",
+      " Silas",
+      "Shadow King"
+    ],
+    "enemies": [
+      "Goblin Scout",
+      "Cursed Armor",
+      "Shadow King"
+    ]
+  },
+  "reputation": {
+    "kills": 3,
+    "spares": 0,
+    "quests_done": 1
+  },
+  "moralAlignment": "violent",
+  "gold": 85,
+  "completedQuests": [
+    "decipher_tome"
+  ],
+  "npcsDefeated": [
+    "goblin_scout_1",
+    "cursed_armor_1",
+    "shadow_king_boss"
+  ],
+  "npcsSpared": [],
+  "npcsMet": [
+    "elara_woodland",
+    "borin_ironhand",
+    "eldritch_librarian_1",
+    "shadow_merchant_1",
+    "shadow_king_1"
+  ],
+  "videoUrls": [],
+  "sessionId": "891e8679eaf6",
+  "game_id": "f2402b61fd",
+  "saved_at": 1774724091.042977
+}

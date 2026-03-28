@@ -1,0 +1,31 @@
+{
+  "playerName": "NeonWraith",
+  "theme": "cyberpunk",
+  "soulColor": "#00ffff",
+  "soulTrait": "Patience",
+  "endingType": {
+    "id": "true_pacifist",
+    "title": "TRUE PACIFIST",
+    "desc": "You showed mercy to every soul."
+  },
+  "roomNumber": 6,
+  "maxRooms": 6,
+  "level": 5,
+  "storySummary": [
+    "Room 1: Woke up in the Neon Undercity",
+    "Room 2: Hacked the Corporate Terminal",
+    "Room 3: Befriended the Rogue AI",
+    "Room 4: Crossed the Laser Grid",
+    "Room 5: Negotiated with the Syndicate",
+    "Room 6: Saved the Digital Rebellion"
+  ],
+  "reputation": {
+    "kills": 0,
+    "spares": 4,
+    "quests_done": 3
+  },
+  "moralAlignment": "pacifist",
+  "gold": 120,
+  "game_id": "ad49a2e31f",
+  "saved_at": 1774723097.3466291
+}

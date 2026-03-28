@@ -116,6 +116,220 @@ button {
     image-rendering: pixelated;
 }
 
+/* ── Landing Page ── */
+
+#landing-page {
+    width: 100%;
+    max-width: 700px;
+    margin: 0 auto;
+    padding: 40px 24px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 32px;
+    min-height: 100vh;
+    overflow-y: auto;
+}
+
+body:has(#landing-page) {
+    overflow: auto;
+    align-items: flex-start;
+}
+
+.landing-header {
+    text-align: center;
+    padding-top: 20px;
+}
+
+.landing-title {
+    font-size: 36px;
+    letter-spacing: 8px;
+    color: #fff;
+    text-shadow: 0 0 30px rgba(255, 255, 0, 0.25);
+    margin-bottom: 12px;
+}
+
+.landing-tagline {
+    font-size: 8px;
+    color: #666;
+    letter-spacing: 2px;
+    line-height: 1.8;
+}
+
+.landing-play-section {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+    max-width: 340px;
+}
+
+.landing-play-btn {
+    width: 100%;
+    padding: 18px 40px;
+    font-size: 16px;
+    font-family: 'Press Start 2P', monospace;
+    border: 3px solid #ff0;
+    background: #ff0;
+    color: #000;
+    letter-spacing: 4px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.landing-play-btn:hover {
+    background: #ffff55;
+    transform: scale(1.03);
+    box-shadow: 0 0 30px rgba(255, 255, 0, 0.3);
+}
+
+.landing-api-form {
+    width: 100%;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+}
+
+.landing-api-form input {
+    flex: 1;
+    padding: 10px 12px;
+    background: #111;
+    border: 2px solid #333;
+    color: #fff;
+    font-family: 'Press Start 2P', monospace;
+    font-size: 8px;
+    outline: none;
+}
+
+.landing-api-form input:focus { border-color: #ff0; }
+
+.landing-api-form #start-btn {
+    width: auto;
+    padding: 10px 20px;
+    font-size: 9px;
+    white-space: nowrap;
+}
+
+.landing-controls {
+    font-size: 7px;
+    color: #333;
+    letter-spacing: 1px;
+}
+
+/* ── Gallery ── */
+
+.landing-gallery {
+    width: 100%;
+}
+
+.gallery-heading {
+    font-size: 10px;
+    color: #555;
+    letter-spacing: 3px;
+    margin-bottom: 16px;
+    text-align: center;
+}
+
+.gallery-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.gallery-empty {
+    grid-column: 1 / -1;
+    text-align: center;
+    font-size: 7px;
+    color: #333;
+    padding: 30px 0;
+}
+
+.gallery-card {
+    background: #0a0a14;
+    border: 2px solid #222;
+    padding: 14px;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    text-decoration: none;
+    color: inherit;
+}
+
+.gallery-card:hover {
+    border-color: #555;
+    transform: translateY(-2px);
+    box-shadow: 0 4px 20px rgba(255, 255, 255, 0.05);
+}
+
+.gallery-card-top {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.gallery-portrait {
+    width: 36px;
+    height: 36px;
+    border-radius: 4px;
+    object-fit: cover;
+    border: 2px solid #333;
+    background: #111;
+    flex-shrink: 0;
+}
+
+.gallery-soul-icon {
+    width: 36px;
+    height: 36px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.gallery-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.gallery-player-name {
+    font-size: 8px;
+    color: #ddd;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.gallery-theme-badge {
+    font-size: 6px;
+    letter-spacing: 1px;
+    padding: 2px 6px;
+    border: 1px solid;
+    display: inline-block;
+    width: fit-content;
+}
+
+.gallery-card-bottom {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+
+.gallery-ending {
+    font-size: 6px;
+    color: #888;
+}
+
+.gallery-rooms {
+    font-size: 6px;
+    color: #444;
+}
+
 /* ── Cutscene video overlay ── */
 
 #cutscene-overlay {

@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Unifactory — Adventure Recap</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            background: #050510;
+            color: #ccc;
+            font-family: 'Press Start 2P', monospace;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ─── Player viewport ─── */
+        .player-viewport {
+            flex: 1;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            overflow: hidden;
+        }
+
+        /* ─── Slides ─── */
+        .slide {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            transition: opacity 0.6s ease;
+            pointer-events: none;
+        }
+        .slide.active {
+            opacity: 1;
+            pointer-events: auto;
+        }
+
+        /* Text slides */
+        .slide-text-inner {
+            max-width: 560px;
+            padding: 24px;
+            text-align: center;
+        }
+        .slide-chapter {
+            font-size: 7px;
+            color: #555;
+            letter-spacing: 4px;
+            margin-bottom: 16px;
+        }
+        .slide-narration {
+            font-size: 9px;
+            color: #bbb;
+            line-height: 2.4;
+            min-height: 40px;
+        }
+        .slide-narration .cursor-blink {
+            display: inline-block;
+            width: 8px;
+            height: 12px;
+            background: currentColor;
+            margin-left: 2px;
+            animation: blink 0.8s steps(1) infinite;
+        }
+        @keyframes blink {
+            50% { opacity: 0; }
+        }
+
+        /* Video slides */
+        .slide-video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+            background: #000;
+        }
+
+        /* Title / ending slides */
+        .slide-title-inner {
+            text-align: center;
+            padding: 24px;
+        }
+        .slide-portrait {
+            width: 90px;
+            height: 90px;
+            border-radius: 8px;
+            border: 3px solid #333;
+            object-fit: cover;
+            margin-bottom: 16px;
+            background: #111;
+        }
+        .slide-soul-big {
+            font-size: 56px;
+            display: block;
+            margin-bottom: 16px;
+        }
+        .slide-player-name {
+            font-size: 16px;
+            color: #fff;
+            letter-spacing: 3px;
+            margin-bottom: 8px;
+        }
+        .slide-meta {
+            display: flex;
+            gap: 12px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin-top: 10px;
+        }
+        .slide-badge {
+            font-size: 7px;
+            padding: 3px 8px;
+            border: 1px solid;
+            letter-spacing: 1px;
+        }
+        .slide-ending-title {
+            font-size: 16px;
+            letter-spacing: 3px;
+            margin-bottom: 20px;
+        }
+        .slide-ending-line {
+            font-size: 8px;
+            color: #999;
+            line-height: 2.4;
+            max-width: 480px;
+            margin: 0 auto;
+        }
+        .slide-epilogue {
+            font-size: 7px;
+            color: #777;
+            font-style: italic;
+            margin-top: 24px;
+            line-height: 2.2;
+            max-width: 420px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        /* Stats slide */
+        .slide-stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            max-width: 420px;
+        }
+        .stat-box {
+            background: #0a0a16;
+            border: 1px solid #1a1a2a;
+            padding: 14px 10px;
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 16px;
+            color: #fff;
+            display: block;
+            margin-bottom: 6px;
+        }
+        .stat-label {
+            font-size: 6px;
+            color: #555;
+            letter-spacing: 1px;
+        }
+
+        /* ─── Controls bar ─── */
+        .player-controls {
+            background: #0a0a14;
+            border-top: 1px solid #1a1a2a;
+            padding: 10px 16px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            z-index: 10;
+        }
+        .ctrl-btn {
+            background: none;
+            border: 1px solid #333;
+            color: #888;
+            font-family: 'Press Start 2P', monospace;
+            font-size: 8px;
+            padding: 6px 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+            white-space: nowrap;
+        }
+        .ctrl-btn:hover { border-color: #888; color: #fff; }
+        .ctrl-btn.playing { border-color: #ff0; color: #ff0; }
+
+        .progress-wrap {
+            flex: 1;
+            height: 6px;
+            background: #111;
+            border-radius: 3px;
+            overflow: hidden;
+            cursor: pointer;
+        }
+        .progress-fill {
+            height: 100%;
+            width: 0%;
+            border-radius: 3px;
+            transition: width 0.3s ease;
+        }
+
+        .ctrl-counter {
+            font-size: 7px;
+            color: #555;
+            min-width: 60px;
+            text-align: right;
+        }
+
+        .ctrl-share {
+            font-size: 7px;
+            padding: 6px 10px;
+        }
+
+        /* ─── Loading / Error ─── */
+        .recap-loading {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 8px;
+            color: #444;
+            z-index: 100;
+            background: #050510;
+        }
+        .recap-loading.hidden { display: none; }
+        .recap-error { color: #ff4444; }
+
+        /* Final CTA slide */
+        .slide-cta {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 16px;
+        }
+        .cta-play-link {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 9px;
+            color: #888;
+            text-decoration: none;
+            border: 2px solid #444;
+            padding: 10px 20px;
+            letter-spacing: 1px;
+            transition: all 0.2s;
+        }
+        .cta-play-link:hover { color: #ff0; border-color: #ff0; }
+        .cta-copy-btn {
+            font-family: 'Press Start 2P', monospace;
+            font-size: 7px;
+            color: #555;
+            background: none;
+            border: 1px solid #333;
+            padding: 6px 14px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        .cta-copy-btn:hover { color: #fff; border-color: #888; }
+
+        .click-hint {
+            position: absolute;
+            bottom: 60px;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 6px;
+            color: #333;
+            letter-spacing: 2px;
+            animation: pulse 2s ease-in-out infinite;
+            pointer-events: none;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 0.3; }
+            50% { opacity: 0.8; }
+        }
+    </style>
+</head>
+<body>
+    <div class="player-viewport" id="viewport">
+        <div class="recap-loading" id="loading-screen">Loading adventure...</div>
+    </div>
+
+    <div class="player-controls" id="controls" style="display:none;">
+        <button class="ctrl-btn" id="btn-play" title="Play / Pause">▶</button>
+        <button class="ctrl-btn" id="btn-prev" title="Previous">◀◀</button>
+        <button class="ctrl-btn" id="btn-next" title="Next">▶▶</button>
+        <div class="progress-wrap" id="progress-wrap">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <span class="ctrl-counter" id="counter">0 / 0</span>
+        <button class="ctrl-btn ctrl-share" id="btn-share">SHARE</button>
+    </div>
+
+    <script>
+        const API_BASE = window.location.origin.includes('localhost')
+            ? 'http://localhost:8081' : window.location.origin;
+
+        const THEME_COLORS = {
+            cyberpunk: '#00ffff', medieval: '#ffd700', space: '#4488ff',
+            horror: '#ff3333', steampunk: '#cc8844', fantasy: '#aa66ff',
+        };
+        const ENDING_COLORS = {
+            true_pacifist: '#44ddff', hero: '#44ff66', merciful: '#aabbff',
+            neutral: '#cccccc', wanderer: '#cccc88', violent: '#ff6644', genocide: '#ff2222',
+        };
+
+        let slides = [];
+        let currentSlide = -1;
+        let autoPlaying = false;
+        let typeTimer = null;
+        let autoTimer = null;
+        let gameData = null;
+
+        async function init() {
+            const params = new URLSearchParams(window.location.search);
+            const id = params.get('id');
+            if (!id) return showError('No game ID provided.');
+
+            try {
+                const res = await fetch(`${API_BASE}/api/games/${encodeURIComponent(id)}`);
+                if (!res.ok) return showError('Game not found.');
+                gameData = await res.json();
+                buildSlides(gameData);
+                document.getElementById('loading-screen').classList.add('hidden');
+                document.getElementById('controls').style.display = 'flex';
+                goToSlide(0);
+                startAutoPlay();
+            } catch (e) {
+                showError('Could not connect to server.');
+            }
+        }
+
+        function showError(msg) {
+            const el = document.getElementById('loading-screen');
+            el.classList.add('recap-error');
+            el.textContent = msg;
+        }
+
+        function buildSlides(g) {
+            const viewport = document.getElementById('viewport');
+            const themeColor = THEME_COLORS[g.theme] || '#888';
+            const endColor = ENDING_COLORS[g.endingType?.id] || '#ccc';
+
+            const cutscenes = g.cutsceneLog || [];
+            const cutscenesByRoom = {};
+            for (const c of cutscenes) {
+                const r = c.room || 0;
+                if (!cutscenesByRoom[r]) cutscenesByRoom[r] = [];
+                cutscenesByRoom[r].push(c);
+            }
+
+            // Also check allSessionVideos if cutsceneLog is empty
+            const sessionVideos = g.allSessionVideos || [];
+
+            // --- Slide 0: Title card ---
+            addSlide(viewport, 'title', () => {
+                let portraitHtml;
+                if (g.portraitUrl) {
+                    portraitHtml = `<img class="slide-portrait" src="${g.portraitUrl}" alt="${esc(g.playerName)}" onerror="this.outerHTML='<span class=slide-soul-big style=color:${g.soulColor||'#f00'}>♥</span>'">`;
+                } else {
+                    portraitHtml = `<span class="slide-soul-big" style="color:${g.soulColor || '#f00'}">♥</span>`;
+                }
+                return `<div class="slide-title-inner">
+                    ${portraitHtml}
+                    <div class="slide-player-name">${esc(g.playerName || 'Wanderer')}</div>
+                    <div class="slide-meta">
+                        <span class="slide-badge" style="color:${themeColor};border-color:${themeColor};">${(g.theme || 'unknown').toUpperCase()}</span>
+                        <span class="slide-badge" style="color:${g.soulColor || '#f00'};border-color:${g.soulColor || '#f00'};">${esc(g.soulTrait || 'Determination')}</span>
+                    </div>
+                </div>`;
+            }, { duration: 4000 });
+
+            // --- Room slides: text + videos interleaved ---
+            const summary = g.storySummary || [];
+            for (let i = 0; i < summary.length; i++) {
+                const roomNum = i + 1;
+                const text = summary[i];
+
+                addSlide(viewport, 'text', () => {
+                    return `<div class="slide-text-inner">
+                        <div class="slide-chapter">CHAPTER ${roomNum}</div>
+                        <div class="slide-narration" id="narration-${slides.length}"></div>
+                    </div>`;
+                }, { typeText: text, duration: 0 });
+
+                const roomCutscenes = cutscenesByRoom[roomNum] || [];
+                for (const cs of roomCutscenes) {
+                    if (cs.videoUrl) {
+                        const fullUrl = cs.videoUrl.startsWith('http')
+                            ? cs.videoUrl : `${API_BASE}${cs.videoUrl}`;
+                        addSlide(viewport, 'video', () => {
+                            return `<video class="slide-video" src="${esc(fullUrl)}" playsinline preload="auto"></video>`;
+                        }, { videoUrl: fullUrl, label: cs.label || '' });
+                    }
+                }
+            }
+
+            // If cutsceneLog was empty but allSessionVideos exists, append them after story
+            if (cutscenes.length === 0 && sessionVideos.length > 0) {
+                for (const sv of sessionVideos) {
+                    if (sv.video_url) {
+                        const fullUrl = sv.video_url.startsWith('http')
+                            ? sv.video_url : `${API_BASE}${sv.video_url}`;
+                        addSlide(viewport, 'video', () => {
+                            return `<video class="slide-video" src="${esc(fullUrl)}" playsinline preload="auto"></video>`;
+                        }, { videoUrl: fullUrl, label: sv.cache_key || '' });
+                    }
+                }
+            }
+
+            // --- Ending slide ---
+            const ending = g.endingNarration || {};
+            const endTitle = ending.title || g.endingType?.title || 'THE END';
+            const endLines = ending.narration || [g.endingType?.desc || 'Your journey has ended.'];
+            const epilogue = ending.epilogue || '';
+
+            addSlide(viewport, 'ending', () => {
+                return `<div class="slide-title-inner">
+                    <div class="slide-ending-title" style="color:${endColor}">${esc(endTitle)}</div>
+                    ${endLines.map(l => `<p class="slide-ending-line">${esc(l)}</p>`).join('')}
+                    ${epilogue ? `<p class="slide-epilogue">${esc(epilogue)}</p>` : ''}
+                </div>`;
+            }, { duration: 6000 });
+
+            // --- Stats slide ---
+            const rep = g.reputation || {};
+            addSlide(viewport, 'stats', () => {
+                return `<div class="slide-title-inner">
+                    <div class="slide-chapter" style="margin-bottom:20px;">ADVENTURE STATS</div>
+                    <div class="slide-stats-grid">
+                        <div class="stat-box"><span class="stat-value">${g.roomNumber || 0}</span><span class="stat-label">ROOMS</span></div>
+                        <div class="stat-box"><span class="stat-value">${g.level || 1}</span><span class="stat-label">LEVEL</span></div>
+                        <div class="stat-box"><span class="stat-value">${g.gold || 0}</span><span class="stat-label">GOLD</span></div>
+                        <div class="stat-box"><span class="stat-value">${rep.kills || 0}</span><span class="stat-label">DEFEATED</span></div>
+                        <div class="stat-box"><span class="stat-value">${rep.spares || 0}</span><span class="stat-label">SPARED</span></div>
+                        <div class="stat-box"><span class="stat-value">${rep.quests_done || 0}</span><span class="stat-label">QUESTS</span></div>
+                    </div>
+                </div>`;
+            }, { duration: 5000 });
+
+            // --- CTA slide ---
+            addSlide(viewport, 'cta', () => {
+                return `<div class="slide-cta">
+                    <div class="slide-ending-title" style="color:#fff; font-size:11px;">UNIFACTORY</div>
+                    <a class="cta-play-link" href="index.html">PLAY YOUR OWN ADVENTURE</a>
+                    <button class="cta-copy-btn" onclick="copyLink(this)">COPY LINK</button>
+                </div>`;
+            }, { duration: 0 });
+
+            document.getElementById('progress-fill').style.background = themeColor;
+            updateCounter();
+        }
+
+        function addSlide(viewport, type, buildHtml, opts = {}) {
+            const div = document.createElement('div');
+            div.className = 'slide';
+            div.dataset.type = type;
+            viewport.appendChild(div);
+
+            const idx = slides.length;
+            slides.push({
+                el: div,
+                type,
+                buildHtml,
+                built: false,
+                opts,
+                idx,
+            });
+        }
+
+        function goToSlide(idx) {
+            if (idx < 0 || idx >= slides.length) return;
+            clearTimers();
+
+            const prev = slides[currentSlide];
+            if (prev) {
+                prev.el.classList.remove('active');
+                // Pause any video on the old slide
+                const oldVid = prev.el.querySelector('video');
+                if (oldVid) { oldVid.pause(); oldVid.currentTime = 0; }
+            }
+
+            currentSlide = idx;
+            const slide = slides[idx];
+
+            if (!slide.built) {
+                slide.el.innerHTML = slide.buildHtml();
+                slide.built = true;
+            }
+
+            slide.el.classList.add('active');
+            updateCounter();
+            updateProgress();
+
+            // Type text slides
+            if (slide.opts.typeText) {
+                typewriteSlide(slide);
+            } else if (slide.type === 'video') {
+                playVideoSlide(slide);
+            } else if (slide.opts.duration > 0 && autoPlaying) {
+                autoTimer = setTimeout(() => advance(), slide.opts.duration);
+            }
+        }
+
+        function typewriteSlide(slide) {
+            const narrationEl = slide.el.querySelector('.slide-narration');
+            if (!narrationEl) {
+                if (slide.opts.duration > 0 && autoPlaying) {
+                    autoTimer = setTimeout(() => advance(), slide.opts.duration);
+                }
+                return;
+            }
+
+            const text = slide.opts.typeText;
+            let charIdx = 0;
+            narrationEl.innerHTML = '<span class="cursor-blink"></span>';
+
+            const speed = Math.max(20, Math.min(45, 3000 / text.length));
+
+            typeTimer = setInterval(() => {
+                if (charIdx >= text.length) {
+                    clearInterval(typeTimer);
+                    typeTimer = null;
+                    narrationEl.innerHTML = esc(text);
+                    if (autoPlaying) {
+                        autoTimer = setTimeout(() => advance(), 2000);
+                    }
+                    return;
+                }
+                charIdx++;
+                narrationEl.innerHTML = esc(text.substring(0, charIdx)) + '<span class="cursor-blink"></span>';
+            }, speed);
+        }
+
+        function playVideoSlide(slide) {
+            const video = slide.el.querySelector('video');
+            if (!video) { if (autoPlaying) advance(); return; }
+
+            video.muted = true;
+            video.currentTime = 0;
+
+            const onEnd = () => {
+                video.removeEventListener('ended', onEnd);
+                video.removeEventListener('error', onErr);
+                if (autoPlaying) {
+                    autoTimer = setTimeout(() => advance(), 800);
+                }
+            };
+            const onErr = () => {
+                video.removeEventListener('ended', onEnd);
+                video.removeEventListener('error', onErr);
+                if (autoPlaying) advance();
+            };
+
+            video.addEventListener('ended', onEnd);
+            video.addEventListener('error', onErr);
+
+            video.load();
+            const playPromise = video.play();
+            if (playPromise) {
+                playPromise.catch(() => {
+                    if (autoPlaying) advance();
+                });
+            }
+        }
+
+        function advance() {
+            if (currentSlide < slides.length - 1) {
+                goToSlide(currentSlide + 1);
+            } else {
+                stopAutoPlay();
+            }
+        }
+
+        function goBack() {
+            if (currentSlide > 0) goToSlide(currentSlide - 1);
+        }
+
+        function clearTimers() {
+            if (typeTimer) { clearInterval(typeTimer); typeTimer = null; }
+            if (autoTimer) { clearTimeout(autoTimer); autoTimer = null; }
+        }
+
+        function startAutoPlay() {
+            autoPlaying = true;
+            document.getElementById('btn-play').textContent = '⏸';
+            document.getElementById('btn-play').classList.add('playing');
+            if (currentSlide >= 0) {
+                const slide = slides[currentSlide];
+                if (slide.type === 'video') {
+                    playVideoSlide(slide);
+                } else if (slide.opts.typeText && !typeTimer) {
+                    // re-trigger auto-advance after text is already shown
+                    autoTimer = setTimeout(() => advance(), 1500);
+                } else if (slide.opts.duration > 0) {
+                    autoTimer = setTimeout(() => advance(), slide.opts.duration);
+                }
+            }
+        }
+
+        function stopAutoPlay() {
+            autoPlaying = false;
+            clearTimers();
+            document.getElementById('btn-play').textContent = '▶';
+            document.getElementById('btn-play').classList.remove('playing');
+        }
+
+        function togglePlay() {
+            if (autoPlaying) stopAutoPlay();
+            else startAutoPlay();
+        }
+
+        function updateCounter() {
+            document.getElementById('counter').textContent = `${currentSlide + 1} / ${slides.length}`;
+        }
+
+        function updateProgress() {
+            const pct = slides.length > 1 ? (currentSlide / (slides.length - 1)) * 100 : 0;
+            document.getElementById('progress-fill').style.width = pct + '%';
+        }
+
+        function copyLink(btn) {
+            navigator.clipboard.writeText(window.location.href).then(() => {
+                btn.textContent = 'COPIED!';
+                setTimeout(() => { btn.textContent = 'COPY LINK'; }, 2000);
+            });
+        }
+
+        function esc(s) {
+            if (!s) return '';
+            return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+        }
+
+        // Controls
+        document.getElementById('btn-play').addEventListener('click', togglePlay);
+        document.getElementById('btn-next').addEventListener('click', () => { stopAutoPlay(); advance(); });
+        document.getElementById('btn-prev').addEventListener('click', () => { stopAutoPlay(); goBack(); });
+        document.getElementById('btn-share').addEventListener('click', () => {
+            navigator.clipboard.writeText(window.location.href).then(() => {
+                const btn = document.getElementById('btn-share');
+                btn.textContent = 'COPIED!';
+                setTimeout(() => { btn.textContent = 'SHARE'; }, 2000);
+            });
+        });
+
+        // Click/tap on viewport to advance
+        document.getElementById('viewport').addEventListener('click', (e) => {
+            if (e.target.tagName === 'VIDEO' || e.target.tagName === 'A' || e.target.tagName === 'BUTTON') return;
+            advance();
+        });
+
+        // Keyboard controls
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight' || e.key === ' ') { e.preventDefault(); advance(); }
+            if (e.key === 'ArrowLeft') { e.preventDefault(); goBack(); }
+            if (e.key === 'p') togglePlay();
+        });
+
+        // Progress bar click to seek
+        document.getElementById('progress-wrap').addEventListener('click', (e) => {
+            const rect = e.currentTarget.getBoundingClientRect();
+            const pct = (e.clientX - rect.left) / rect.width;
+            const targetSlide = Math.round(pct * (slides.length - 1));
+            stopAutoPlay();
+            goToSlide(targetSlide);
+        });
+
+        init();
+    </script>
+</body>
+</html>

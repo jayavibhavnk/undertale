@@ -1,0 +1,35 @@
+{
+  "playerName": "Zephyr",
+  "theme": "space",
+  "soulColor": "#CC00FF",
+  "soulTrait": "Perseverance",
+  "endingType": {
+    "id": "violent",
+    "title": "VIOLENT",
+    "desc": "Fear follows in your wake."
+  },
+  "roomNumber": 10,
+  "maxRooms": 10,
+  "level": 8,
+  "storySummary": [
+    "Room 1: Awakened on Station Omega",
+    "Room 2: Found the broken cryo pods",
+    "Room 3: First contact with the parasite",
+    "Room 4: Lost the medical bay",
+    "Room 5: Fought through engineering",
+    "Room 6: Discovered the captain logs",
+    "Room 7: The airlock gambit",
+    "Room 8: Betrayed by the AI",
+    "Room 9: Last stand in the reactor",
+    "Room 10: Escaped into the void"
+  ],
+  "reputation": {
+    "kills": 7,
+    "spares": 1,
+    "quests_done": 2
+  },
+  "moralAlignment": "aggressive",
+  "gold": 340,
+  "game_id": "53f11f91a7",
+  "saved_at": 1774723097.425077
+}

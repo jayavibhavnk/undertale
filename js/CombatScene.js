@@ -18,7 +18,7 @@ export default class CombatScene extends Phaser.Scene {
         const music = this.registry.get('musicManager');
         if (music) {
             const theme = storyState.theme || 'cyberpunk';
-            music.play(`combat_${theme}`, 1000);
+            music.playCombat(theme, this.enemyData.name, this.returnRoom?.mood);
         }
 
         this.enemyHp = this.enemyData.hp;
@@ -514,6 +514,10 @@ export default class CombatScene extends Phaser.Scene {
             cutsceneClient.checkCache(cacheKey).then(cached => {
                 if (cached?.status === 'complete' && cached.video_url) {
                     this.combatText.setText('🎬 Playing cinematic...');
+                    const outcomeLabel = triggerType.includes('spare')
+                        ? `Showed mercy to ${this.enemyData.name || 'the enemy'}`
+                        : `Defeated ${this.enemyData.name || 'the enemy'}!`;
+                    storyState.logCutscene(triggerType, cached.video_url, outcomeLabel);
                     cutscenePlayer.play(cached.video_url).then(then);
                 } else if (cached?.status === 'error') {
                     then();

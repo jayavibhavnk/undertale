@@ -1485,6 +1485,73 @@ def serve_music(filename: str):
 
 
 # ────────────────────────────────────────────────────────────
+# Game save / gallery / recap
+# ────────────────────────────────────────────────────────────
+
+GAMES_DIR = STORY_DIR  # reuse the already-created story_state dir
+
+
+@app.post("/api/save-game")
+def save_game(payload: dict):
+    """Save a completed game for the gallery / recap page."""
+    game_id = uuid.uuid4().hex[:10]
+    payload["game_id"] = game_id
+    payload["saved_at"] = time.time()
+
+    sid = payload.get("sessionId", "")
+    if sid:
+        with _cache_lock:
+            all_vids = []
+            for key, entry in video_cache.items():
+                if key.startswith(sid) and entry.get("status") == "complete" and entry.get("video_url"):
+                    all_vids.append({
+                        "cache_key": key,
+                        "video_url": entry["video_url"],
+                    })
+            payload["allSessionVideos"] = all_vids
+
+    fp = GAMES_DIR / f"{game_id}.json"
+    fp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(f"[save] Game saved: {game_id} — {payload.get('playerName', '?')}")
+    return {"game_id": game_id}
+
+
+@app.get("/api/games")
+def list_games():
+    """Return lightweight list of saved games for the gallery."""
+    games = []
+    for fp in sorted(GAMES_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(fp.read_text())
+            games.append({
+                "game_id": data.get("game_id", fp.stem),
+                "playerName": data.get("playerName", "Unknown"),
+                "theme": data.get("theme", "cyberpunk"),
+                "soulColor": data.get("soulColor", "#ff0000"),
+                "soulTrait": data.get("soulTrait", "Determination"),
+                "endingType": data.get("endingType", {}),
+                "roomCount": data.get("roomNumber", 0),
+                "maxRooms": data.get("maxRooms", 10),
+                "level": data.get("level", 1),
+                "portraitUrl": data.get("portraitUrl", ""),
+                "saved_at": data.get("saved_at", 0),
+            })
+        except Exception:
+            continue
+    return {"games": games[:50]}
+
+
+@app.get("/api/games/{game_id}")
+def get_game(game_id: str):
+    """Return full game data for the recap page."""
+    safe = "".join(c if c.isalnum() else "" for c in game_id)
+    fp = GAMES_DIR / f"{safe}.json"
+    if not fp.exists():
+        raise HTTPException(404, "Game not found")
+    return json.loads(fp.read_text())
+
+
+# ────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("=" * 60)
     print("  UNIFACTORY — AI Cutscene Backend (dual-model)")

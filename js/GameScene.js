@@ -105,7 +105,8 @@ export default class GameScene extends Phaser.Scene {
         if (music) {
             const theme = storyState.theme || 'cyberpunk';
             const mood = spec.mood || 'calm';
-            music.play(`explore_${theme}_${mood}`);
+            music.playRoom(theme, mood, spec.name, spec.narration, spec.room_id);
+            this._preloadCombatMusic(spec, theme);
         }
 
         if (spec.narration && !this.combatResult) {
@@ -163,6 +164,18 @@ export default class GameScene extends Phaser.Scene {
         cutsceneClient.preload(requests).then(res => {
             if (res.queued?.length) console.log('[cutscene] preloading exit cutscenes:', res.queued);
         }).catch(() => {});
+    }
+
+    _preloadCombatMusic(spec, theme) {
+        const music = this.registry.get('musicManager');
+        if (!music) return;
+        const enemies = (spec.enemies || []).filter(e =>
+            !storyState.npcsDefeated.includes(e.id) &&
+            !storyState.npcsSpared.includes(e.id)
+        );
+        for (const enemy of enemies) {
+            music.preloadCombat(theme, enemy.name, spec.mood);
+        }
     }
 
     preloadEnemyCutscenes() {
@@ -1302,6 +1315,7 @@ export default class GameScene extends Phaser.Scene {
             cutsceneClient.checkCache(key).then(cached => {
                 if (cached?.status === 'complete' && cached.video_url) {
                     sub.setText('🎬 Playing cinematic...');
+                    storyState.logCutscene('boss_intro', cached.video_url, `${enemyData.name || 'Enemy'} appears!`);
                     this.time.delayedCall(300, () => {
                         cleanup();
                         cutscenePlayer.play(cached.video_url).then(() => {

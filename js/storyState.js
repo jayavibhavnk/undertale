@@ -52,6 +52,9 @@ const storyState = {
     // Reputation
     reputation: { kills: 0, spares: 0, quests_done: 0 },
 
+    // Cutscene log for recap
+    cutsceneLog: [],
+
     setCharacterIdentity({ name, soulColor, soulTrait, characterPresetId,
                            characterPhotoUrl, enemyPresetIds, playerPortraitUrl,
                            playerSpriteSheetUrl }) {
@@ -90,6 +93,7 @@ const storyState = {
         this.roomNumber = 0;
         this.storySummary = [];
         this.uniqueNames = { rooms: [], npcs: [], enemies: [] };
+        this.cutsceneLog = [];
     },
 
     // --- Progression ---
@@ -261,6 +265,47 @@ const storyState = {
         if (kills > spares * 2) return 'aggressive';
         if (spares > kills * 2) return 'merciful';
         return 'neutral';
+    },
+
+    logCutscene(trigger, videoUrl, label) {
+        this.cutsceneLog.push({
+            trigger,
+            videoUrl,
+            label: label || trigger,
+            room: this.roomNumber,
+            timestamp: Date.now(),
+        });
+    },
+
+    toRecap(endingType, narration) {
+        return {
+            playerName: this.playerName,
+            theme: this.theme,
+            soulColor: this.soulColor,
+            soulTrait: this.soulTrait,
+            portraitUrl: this.playerPortraitUrl || '',
+            endingType: endingType || this.getEndingType(),
+            endingNarration: narration || {},
+            roomNumber: this.roomNumber,
+            maxRooms: this.maxRooms,
+            level: this.level,
+            storySummary: [...this.storySummary],
+            storyLog: [...this.storyLog],
+            roomsVisited: [...this.roomsVisited],
+            uniqueNames: {
+                rooms: [...this.uniqueNames.rooms],
+                npcs: [...this.uniqueNames.npcs],
+                enemies: [...this.uniqueNames.enemies],
+            },
+            reputation: { ...this.reputation },
+            moralAlignment: this.getMoralAlignment(),
+            gold: this.gold,
+            completedQuests: [...this.completedQuests],
+            npcsDefeated: [...this.npcsDefeated],
+            npcsSpared: [...this.npcsSpared],
+            npcsMet: [...this.npcsMet],
+            cutsceneLog: this.cutsceneLog.map(c => ({ ...c })),
+        };
     },
 
     toContext() {

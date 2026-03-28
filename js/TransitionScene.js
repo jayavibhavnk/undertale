@@ -90,6 +90,12 @@ export default class TransitionScene extends Phaser.Scene {
             }
         });
 
+        const music = this.registry.get('musicManager');
+        if (music) {
+            const theme = storyState.theme || 'cyberpunk';
+            music.play(`loading_${theme}`, 1500);
+        }
+
         this.cameras.main.fadeIn(200);
         this.loadRoomAndCutscene();
     }
@@ -196,6 +202,8 @@ export default class TransitionScene extends Phaser.Scene {
         if (cutsceneVideoUrl && cutscenePlayer) {
             console.log('[transition] Playing cutscene:', cutsceneVideoUrl);
             this.genText.setText('Playing cutscene...');
+            const label = !this.trigger ? 'The journey begins...' : `Traveling to ${roomSpec.name || 'the next area'}...`;
+            storyState.logCutscene(this.trigger || 'first_room', cutsceneVideoUrl, label);
             this.time.delayedCall(300, async () => {
                 await cutscenePlayer.play(cutsceneVideoUrl);
                 this.transitionToGame(roomSpec);

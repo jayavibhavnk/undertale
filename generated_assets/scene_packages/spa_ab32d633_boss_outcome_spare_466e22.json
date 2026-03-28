@@ -1,0 +1,16 @@
+{
+  "scene_id": "spa_ab32d633_boss_outcome_spare_466e22",
+  "reference_images": [
+    "/Users/faisal./dev/glitch-hacks-ucla/undertale/generated_assets/master_sheets/spa_ab32d633_master_sheet.png",
+    "/Users/faisal./dev/glitch-hacks-ucla/undertale/generated_assets/video_refs/spa_ab32d633_scene_anchor.png"
+  ],
+  "scene_prompt": "Use the attached approved reference image(s) to preserve the same protagonist identity across the entire scene.\n\nPROTAGONIST\nPersistent story game protagonist.\nCharacter name: dh3\nWorld: space\n\nIdentity requirements:\n- same face and facial identity, same hairstyle\n- same body proportions, same costume archetype\n- same signature accessories, same overall silhouette\n\nStyle: clean sci-fi, spacefaring, modular suit design, technical materials\nOutfit profile: flight suit or modular jacket, utility belt, reinforced boots, subtle luminous accents\nProps: access card, data pad, energy canister\nCustomization:\n\nSTYLE\nCinematic game cutscene style.\nStylized but consistent with the approved master character sheet.\nReadable silhouette, clean visual storytelling, strong composition, game-trailer quality.\nWorld tone: space.\nEnvironment hint: spaceship interiors, stations, distant planets\n\nNEGATIVE CONSTRAINTS\ndo not change age drastically; do not change face shape; do not change hair color unless requested; do not replace outfit with a different archetype; do not introduce extra limbs or malformed hands; do not alter glasses or signature accessories; do not drift into a different art style mid-generation; do not change the character into a different person; do not alter costume colors significantly; do not add random accessories; do not introduce visual drift between shots; do not make the character look older or younger; do not change the art direction dramatically\n\nSCENE TYPE: Merciful Resolution\nDURATION: 8 seconds\n\nThe protagonist shows mercy to \"Rogue AI Core\".\nThe tension drains away. The enemy retreats peacefully.\nLocation: Control Center\n\nCamera: medium shot of both characters. The enemy turns away.\nSlow zoom out as peace returns. Bittersweet, compassionate lighting.",
+  "trigger_type": "boss_outcome_spare",
+  "context": {
+    "enemy_name": "Rogue AI Core",
+    "enemy_color": "#ff4444",
+    "room_name": "Control Center",
+    "room_mood": "eerie"
+  },
+  "model_channel": "fast"
+}

@@ -1,0 +1,162 @@
+{
+  "playerName": "dh3",
+  "theme": "space",
+  "soulColor": "#FFFF00",
+  "soulTrait": "Justice",
+  "portraitUrl": "http://localhost:8081/api/assets/portraits/9c57ebc1_portrait.png",
+  "endingType": {
+    "id": "genocide",
+    "title": "NO MERCY",
+    "desc": "You left nothing alive."
+  },
+  "endingNarration": {
+    "title": "Silence of the Void",
+    "narration": [
+      "The last echoes of Omega-7 fade into the cold.",
+      "No cry answered your passage.",
+      "Justice delivered, a stark and empty peace.",
+      "You are the sole survivor of this silent grave."
+    ],
+    "epilogue": "Your ship drifts onward, a solitary vessel in an uncaring cosmos, forever marked by the silence you leave behind."
+  },
+  "roomNumber": 3,
+  "maxRooms": 3,
+  "level": 3,
+  "storySummary": [
+    "Room 1: \"Derelict Docking Bay\" — The air hangs heavy with the scent of ozone and decay, faint emergency lights flickering across riveted metal walls.",
+    "Defeated enemy \"parasitic_swarm_01\"",
+    "Room 2: \"Control Center\" — The hum of dying machinery is a mournful dirge in the vast, echoing control center.",
+    "Defeated enemy \"rogue_ai_core\"",
+    "Room 3: \"Engine Core Chamber\" — A deafening thrum vibrates through the deck plating. Before you lies the heart of Omega-7, pulsing with an unnatural, volatile energy.",
+    "Defeated enemy \"cosmic_abomination_omega\"",
+    "Finale: defeated the final enemy"
+  ],
+  "storyLog": [
+    "quest_started:data_retrieval",
+    "defeated:parasitic_swarm_01",
+    "exited:right:Control Center",
+    "quest_started:void_communication",
+    "defeated:rogue_ai_core",
+    "exited:right:Engine Room",
+    "defeated:cosmic_abomination_omega"
+  ],
+  "roomsVisited": [
+    "omega7_docking_bay",
+    "omega7_control_center",
+    "omega7_engine_core"
+  ],
+  "uniqueNames": {
+    "rooms": [
+      "Derelict Docking Bay",
+      "Control Center",
+      "Engine Core Chamber"
+    ],
+    "npcs": [
+      "Elara Vance",
+      "Unit 734",
+      "Dr. Arav",
+      "Unit 919",
+      "Archivist Echo"
+    ],
+    "enemies": [
+      "Parasitic Swarm",
+      "Rogue AI Core",
+      "Omega Abomination"
+    ]
+  },
+  "reputation": {
+    "kills": 3,
+    "spares": 0,
+    "quests_done": 0
+  },
+  "moralAlignment": "violent",
+  "gold": 80,
+  "completedQuests": [],
+  "npcsDefeated": [
+    "parasitic_swarm_01",
+    "rogue_ai_core",
+    "cosmic_abomination_omega"
+  ],
+  "npcsSpared": [],
+  "npcsMet": [
+    "elara_vance",
+    "unit_734",
+    "dr_arav",
+    "unit_919",
+    "holographic_archivist"
+  ],
+  "cutsceneLog": [
+    {
+      "trigger": "first_room",
+      "videoUrl": "http://localhost:8081/api/videos/spa_ab32d633_first_room_175573.mp4",
+      "label": "The journey begins...",
+      "room": 1,
+      "timestamp": 1774724915235
+    },
+    {
+      "trigger": "boss_intro",
+      "videoUrl": "http://localhost:8081/api/videos/spa_ab32d633_boss_intro_d09538.mp4",
+      "label": "Parasitic Swarm appears!",
+      "room": 1,
+      "timestamp": 1774724974436
+    },
+    {
+      "trigger": "boss_outcome_victory",
+      "videoUrl": "http://localhost:8081/api/videos/spa_ab32d633_boss_outcome_victory_f1e344.mp4",
+      "label": "Defeated Parasitic Swarm!",
+      "room": 1,
+      "timestamp": 1774725032027
+    },
+    {
+      "trigger": "exited right toward \"Control Center\"",
+      "videoUrl": "http://localhost:8081/api/videos/spa_ab32d633_room_transition_4bd189.mp4",
+      "label": "Traveling to Control Center...",
+      "room": 2,
+      "timestamp": 1774725053282
+    },
+    {
+      "trigger": "boss_intro",
+      "videoUrl": "http://localhost:8081/api/videos/spa_ab32d633_boss_intro_b6fec9.mp4",
+      "label": "Rogue AI Core appears!",
+      "room": 2,
+      "timestamp": 1774725118030
+    },
+    {
+      "trigger": "boss_outcome_victory",
+      "videoUrl": "http://localhost:8081/api/videos/spa_ab32d633_boss_outcome_victory_29f133.mp4",
+      "label": "Defeated Rogue AI Core!",
+      "room": 2,
+      "timestamp": 1774725198819
+    },
+    {
+      "trigger": "exited right toward \"Engine Room\"",
+      "videoUrl": "http://localhost:8081/api/videos/spa_ab32d633_room_transition_ea5b92.mp4",
+      "label": "Traveling to Engine Core Chamber...",
+      "room": 3,
+      "timestamp": 1774725218103
+    },
+    {
+      "trigger": "boss_intro",
+      "videoUrl": "http://localhost:8081/api/videos/spa_ab32d633_boss_intro_58c3c4.mp4",
+      "label": "Omega Abomination appears!",
+      "room": 3,
+      "timestamp": 1774725271771
+    },
+    {
+      "trigger": "boss_outcome_victory",
+      "videoUrl": "http://localhost:8081/api/videos/spa_ab32d633_boss_outcome_victory_025b33.mp4",
+      "label": "Defeated Omega Abomination!",
+      "room": 3,
+      "timestamp": 1774725361700
+    }
+  ],
+  "sessionId": "686d8b27b0fa",
+  "game_id": "6fc6f28443",
+  "saved_at": 1774725375.748451,
+  "allSessionVideos": [
+    {
+      "cache_key": "686d8b27b0fa_first_room",
+      "video_url": "/api/videos/spa_ab32d633_first_room_175573.mp4"
+    }
+  ]
+}

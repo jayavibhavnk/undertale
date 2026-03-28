@@ -1,5 +1,7 @@
 import storyState from './storyState.js';
 
+const API_BASE = 'http://localhost:8081';
+
 const ENDING_COLORS = {
     true_pacifist: { bg: '#0a1628', accent: '#44ddff', glow: '#00aaff' },
     hero:          { bg: '#0a1e0a', accent: '#44ff66', glow: '#00cc44' },
@@ -25,7 +27,14 @@ export default class EndingScene extends Phaser.Scene {
         this.cameras.main.fadeIn(2000, 0, 0, 0);
 
         const music = this.registry.get('musicManager');
-        if (music) music.stop(3000);
+        if (music) {
+            const goodEndings = ['true_pacifist', 'hero', 'merciful'];
+            const badEndings = ['violent', 'genocide'];
+            const endingMusicKey = goodEndings.includes(this.endingType.id) ? 'ending_good'
+                : badEndings.includes(this.endingType.id) ? 'ending_bad'
+                : 'ending_neutral';
+            music.play(endingMusicKey, 3000);
+        }
 
         const gemini = this.registry.get('geminiClient');
         let narration = null;
@@ -105,13 +114,21 @@ export default class EndingScene extends Phaser.Scene {
             this.tweens.add({ targets: ep, alpha: 1, duration: 1000, delay: statsDelay + stats.length * 300 + 400 });
         }
 
+        // Save game in background
+        this._saveGame(narration);
+
         const endDelay = statsDelay + stats.length * 300 + 2000;
-        const prompt = this.add.text(W / 2, H - 20, '[ PRESS ENTER TO START A NEW ADVENTURE ]', {
+
+        const shareBtn = this.add.text(W / 2, H - 36, '[ SHARE YOUR ADVENTURE ]', {
+            fontFamily: '"Press Start 2P"', fontSize: '6px', color: colors.accent,
+        }).setOrigin(0.5).setAlpha(0).setInteractive({ useHandCursor: true });
+
+        const prompt = this.add.text(W / 2, H - 16, '[ PRESS ENTER TO PLAY AGAIN ]', {
             fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#444444'
         }).setOrigin(0.5).setAlpha(0);
 
         this.tweens.add({
-            targets: prompt, alpha: 1, duration: 800, delay: endDelay,
+            targets: [shareBtn, prompt], alpha: 1, duration: 800, delay: endDelay,
             onComplete: () => {
                 this.tweens.add({
                     targets: prompt, alpha: 0.3, duration: 800,
@@ -125,5 +142,44 @@ export default class EndingScene extends Phaser.Scene {
                 });
             }
         });
+
+        shareBtn.on('pointerdown', () => {
+            if (this._savedGameId) {
+                const url = `${window.location.origin}/recap.html?id=${this._savedGameId}`;
+                window.open(url, '_blank');
+            } else {
+                shareBtn.setText('[ SAVING... ]');
+            }
+        });
+        shareBtn.on('pointerover', () => shareBtn.setColor('#ffffff'));
+        shareBtn.on('pointerout', () => shareBtn.setColor(colors.accent));
+    }
+
+    async _saveGame(narration) {
+        try {
+            const recap = storyState.toRecap(this.endingType, {
+                title: narration?.title || this.endingType.title,
+                narration: narration?.narration || [this.endingType.desc],
+                epilogue: narration?.epilogue || '',
+            });
+
+            const cutsceneClient = this.registry.get('cutsceneClient');
+            if (cutsceneClient?.sessionId) {
+                recap.sessionId = cutsceneClient.sessionId;
+            }
+
+            const res = await fetch(`${API_BASE}/api/save-game`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(recap),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                this._savedGameId = data.game_id;
+                console.log('[ending] Game saved:', data.game_id);
+            }
+        } catch (e) {
+            console.warn('[ending] Save failed:', e);
+        }
     }
 }

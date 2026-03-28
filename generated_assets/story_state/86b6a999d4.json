@@ -1,0 +1,28 @@
+{
+  "playerName": "TestHero",
+  "theme": "medieval",
+  "soulColor": "#ff0000",
+  "soulTrait": "Determination",
+  "endingType": {
+    "id": "hero",
+    "title": "HERO",
+    "desc": "Protector of the innocent."
+  },
+  "roomNumber": 3,
+  "maxRooms": 3,
+  "level": 4,
+  "storySummary": [
+    "Room 1: Entered the Cursed Forest",
+    "Room 2: Met the Wandering Knight",
+    "Room 3: Defeated the Shadow Dragon"
+  ],
+  "reputation": {
+    "kills": 1,
+    "spares": 2,
+    "quests_done": 1
+  },
+  "moralAlignment": "merciful",
+  "gold": 50,
+  "game_id": "86b6a999d4",
+  "saved_at": 1774723068.443868
+}

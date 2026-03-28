@@ -109,8 +109,7 @@ export default class IntroSequenceScene extends Phaser.Scene {
         const music = this.registry.get('musicManager');
         if (music) {
             music.play(`intro_${theme}`);
-            music.preload(`combat_${theme}`);
-            music.preload(`explore_${theme}_calm`);
+            music.preload(`loading_${theme}`);
         }
 
         const fallbackLines = (FALLBACK[theme] || FALLBACK.cyberpunk).map(line =>
