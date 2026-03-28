@@ -3,6 +3,7 @@ import IntroSequenceScene from './IntroSequenceScene.js';
 import GameScene from './GameScene.js';
 import CombatScene from './CombatScene.js';
 import TransitionScene from './TransitionScene.js';
+import EndingScene from './EndingScene.js';
 import { GeminiClient } from './gemini.js';
 import { CutsceneClient, CutscenePlayer } from './cutsceneClient.js';
 import storyState from './storyState.js';
@@ -18,6 +19,7 @@ function initGame(apiKey, model, characterData) {
     document.getElementById('game-container').style.display = 'block';
 
     storyState.reset(characterData.theme);
+    storyState.maxRooms = characterData.maxRooms || 10;
     storyState.setCharacterIdentity({
         name: characterData.name,
         soulColor: characterData.soulColor,
@@ -39,7 +41,7 @@ function initGame(apiKey, model, characterData) {
             default: 'arcade',
             arcade: { gravity: { y: 0 }, debug: false }
         },
-        scene: [BootScene, IntroSequenceScene, TransitionScene, GameScene, CombatScene],
+        scene: [BootScene, IntroSequenceScene, TransitionScene, GameScene, CombatScene, EndingScene],
         input: {
             keyboard: {
                 capture: [

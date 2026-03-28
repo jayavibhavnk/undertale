@@ -79,6 +79,7 @@ export function runCharacterCreation() {
         let uploadedPhotoDataUrl = null;
         let selectedEnemies = [];
         let useUpload = false;
+        let maxRooms = 10;
 
         const $ = (sel) => document.querySelector(sel);
         const $$ = (sel) => document.querySelectorAll(sel);
@@ -231,6 +232,17 @@ export function runCharacterCreation() {
         // set initial glow
         const initialSoul = $('.cc-soul-btn.selected');
         if (initialSoul) initialSoul.style.setProperty('--soul-glow', initialSoul.dataset.color);
+
+        // ── Step 0b: Game Length ──
+
+        $$('.cc-length-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                playClick();
+                $$('.cc-length-btn').forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                maxRooms = parseInt(btn.dataset.rooms, 10);
+            });
+        });
 
         // ── Step 1: Theme ──
 
@@ -404,6 +416,7 @@ export function runCharacterCreation() {
                 enemyPresetIds: selectedEnemies,
                 playerPortraitUrl: null,
                 playerSpriteSheetUrl: null,
+                maxRooms,
             };
 
             screen.style.display = 'none';

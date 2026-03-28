@@ -30,6 +30,13 @@ const storyState = {
     activeQuests: [],
     completedQuests: [],
 
+    // Story arc
+    maxRooms: 10,
+    roomNumber: 0,
+    storySummary: [],
+    uniqueNames: { rooms: [], npcs: [], enemies: [] },
+    endingTriggered: false,
+
     // World tracking
     questFlags: {},
     npcsMet: [],
@@ -76,9 +83,13 @@ const storyState = {
         this.storyLog = [];
         this.chapter = 1;
         this.gameOver = false;
+        this.endingTriggered = false;
         this.activeQuests = [];
         this.completedQuests = [];
         this.reputation = { kills: 0, spares: 0, quests_done: 0 };
+        this.roomNumber = 0;
+        this.storySummary = [];
+        this.uniqueNames = { rooms: [], npcs: [], enemies: [] };
     },
 
     // --- Progression ---
@@ -147,6 +158,7 @@ const storyState = {
         this.completedQuests.push(quest.id);
         this.reputation.quests_done++;
         this.logEvent(`quest_complete:${questId}`);
+        this.addSummary(`Completed quest: "${quest.title || questId}"`);
         return quest;
     },
 
@@ -171,12 +183,14 @@ const storyState = {
         if (!this.npcsDefeated.includes(enemyId)) this.npcsDefeated.push(enemyId);
         this.reputation.kills++;
         this.logEvent(`defeated:${enemyId}`);
+        this.addSummary(`Defeated enemy "${enemyId}"`);
     },
 
     spareEnemy(enemyId) {
         if (!this.npcsSpared.includes(enemyId)) this.npcsSpared.push(enemyId);
         this.reputation.spares++;
         this.logEvent(`spared:${enemyId}`);
+        this.addSummary(`Showed mercy to "${enemyId}"`);
     },
 
     // --- HP ---
@@ -201,6 +215,45 @@ const storyState = {
         if (this.storyLog.length > 40) this.storyLog.shift();
     },
 
+    getStoryPhase() {
+        const pct = this.roomNumber / this.maxRooms;
+        if (pct >= 0.92) return 'finale';
+        if (pct >= 0.65) return 'climax';
+        if (pct >= 0.25) return 'rising';
+        return 'setup';
+    },
+
+    isFinaleRoom() {
+        return this.roomNumber >= this.maxRooms;
+    },
+
+    addSummary(text) {
+        this.storySummary.push(text);
+        if (this.storySummary.length > 20) this.storySummary.shift();
+    },
+
+    trackNames(roomSpec) {
+        if (roomSpec.name) this.uniqueNames.rooms.push(roomSpec.name);
+        for (const n of (roomSpec.npcs || [])) {
+            if (n.name) this.uniqueNames.npcs.push(n.name);
+        }
+        for (const e of (roomSpec.enemies || [])) {
+            if (e.name) this.uniqueNames.enemies.push(e.name);
+        }
+    },
+
+    getEndingType() {
+        const { kills, spares, quests_done } = this.reputation;
+        const total = kills + spares;
+        if (kills === 0 && spares >= 3) return { id: 'true_pacifist', title: 'TRUE PACIFIST', desc: 'You showed mercy to every soul.' };
+        if (spares === 0 && kills >= 3) return { id: 'genocide', title: 'NO MERCY', desc: 'You left nothing alive.' };
+        if (kills === 0 && quests_done >= 2) return { id: 'hero', title: 'HERO', desc: 'Protector of the innocent.' };
+        if (spares > kills && quests_done >= 1) return { id: 'merciful', title: 'MERCIFUL', desc: 'Compassion guided your path.' };
+        if (kills > spares * 2) return { id: 'violent', title: 'VIOLENT', desc: 'Fear follows in your wake.' };
+        if (quests_done === 0 && total <= 1) return { id: 'wanderer', title: 'WANDERER', desc: 'You passed through like a ghost.' };
+        return { id: 'neutral', title: 'NEUTRAL', desc: 'You walked the line between light and dark.' };
+    },
+
     getMoralAlignment() {
         const { kills, spares } = this.reputation;
         if (kills === 0 && spares > 0) return 'pacifist';
@@ -214,6 +267,14 @@ const storyState = {
         return {
             theme: this.theme,
             chapter: this.chapter,
+            room_number: this.roomNumber,
+            max_rooms: this.maxRooms,
+            story_phase: this.getStoryPhase(),
+            is_finale: this.isFinaleRoom(),
+            story_summary: this.storySummary.slice(-8),
+            used_room_names: this.uniqueNames.rooms.slice(-10),
+            used_npc_names: this.uniqueNames.npcs.slice(-15),
+            used_enemy_names: this.uniqueNames.enemies.slice(-10),
             player_name: this.playerName,
             soul_trait: this.soulTrait,
             soul_color: this.soulColor,

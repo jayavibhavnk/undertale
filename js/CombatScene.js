@@ -490,7 +490,7 @@ export default class CombatScene extends Phaser.Scene {
     playOutcomeCutscene(cacheKey, triggerType, then) {
         const cutsceneClient = this.registry.get('cutsceneClient');
         const cutscenePlayer = this.registry.get('cutscenePlayer');
-        if (!cutsceneClient?.ready || !cutscenePlayer) {
+        if (!cutsceneClient?.hasSession || !cutscenePlayer) {
             then();
             return;
         }
@@ -507,7 +507,10 @@ export default class CombatScene extends Phaser.Scene {
         ]).catch(() => {});
 
         const pollMs = 2500;
+        const startTime = Date.now();
+        const maxWaitMs = 90000;
         const poll = () => {
+            if (Date.now() - startTime > maxWaitMs) { then(); return; }
             cutsceneClient.checkCache(cacheKey).then(cached => {
                 if (cached?.status === 'complete' && cached.video_url) {
                     this.combatText.setText('🎬 Playing cinematic...');
@@ -517,6 +520,7 @@ export default class CombatScene extends Phaser.Scene {
                 } else {
                     if (cached?.status === 'generating_video') this.combatText.setText('🎬 Rendering aftermath...');
                     else if (cached?.status === 'waiting_rate_limit') this.combatText.setText('⏳ Queued...');
+                    else this.combatText.setText('⏳ Preparing cinematic...');
                     this.time.delayedCall(pollMs, poll);
                 }
             }).catch(() => { this.time.delayedCall(pollMs, poll); });

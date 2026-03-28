@@ -37,11 +37,73 @@ COLORS - bg: #060612 #080818 #0a0616 | walls: #1a2a3e #182030 | accents: #4488ff
     }
 };
 
-const STORY_STRUCTURE = `NARRATIVE STRUCTURE (follow this based on chapter number):
-- Chapters 1-2 (ACT 1 - SETUP): Introduce the world. Let the player explore, meet key NPCs, get a main quest. Low danger. Establish mystery.
-- Chapters 3-5 (ACT 2 - RISING): Escalate conflict. Introduce antagonist forces. Betray expectations. Give the player hard choices. More combat. Sub-quests branch out.
-- Chapters 6-8 (ACT 3 - CLIMAX): Build toward confrontation. Callbacks to earlier NPCs/items. High stakes. Boss-tier enemies. Resolve quest lines.
-- The player's MORAL ALIGNMENT should affect NPC reactions: pacifist players find more allies; violent players face more hostility.`;
+const STORY_BEATS = {
+    setup:  ['introduction', 'first_ally', 'main_quest_reveal', 'world_building'],
+    rising: ['rising_danger', 'unexpected_ally', 'betrayal_or_twist', 'dark_secret', 'midpoint_crisis', 'moral_dilemma', 'loss_or_sacrifice'],
+    climax: ['preparation', 'penultimate_confrontation', 'darkest_hour', 'revelation'],
+    finale: ['final_confrontation'],
+};
+
+function getStoryStructure(ctx) {
+    const room = ctx.room_number || 1;
+    const max = ctx.max_rooms || 10;
+    const phase = ctx.story_phase || 'setup';
+    const pct = Math.round((room / max) * 100);
+    const remaining = max - room;
+
+    const beats = STORY_BEATS[phase] || STORY_BEATS.setup;
+    const beat = beats[Math.floor(Math.random() * beats.length)];
+
+    let phaseInstr = '';
+    switch (phase) {
+        case 'setup':
+            phaseInstr = `ACT 1 — SETUP (Room ${room}/${max}, ${pct}% through story)
+Introduce the world. Let the player explore, meet key NPCs, discover the central conflict. Low danger. Plant seeds of mystery. Establish at least one main quest thread. Build atmosphere.
+STORY BEAT for this room: "${beat}" — shape the room around this narrative function.`;
+            break;
+        case 'rising':
+            phaseInstr = `ACT 2 — RISING ACTION (Room ${room}/${max}, ${pct}% through story)
+Escalate conflict. Introduce antagonist forces. Betray expectations. Present hard moral choices. More enemies appear. Sub-quests branch. Reference earlier events/NPCs to build continuity.
+STORY BEAT for this room: "${beat}" — shape the room around this narrative function.`;
+            break;
+        case 'climax':
+            phaseInstr = `ACT 3 — CLIMAX (Room ${room}/${max}, ${pct}% through story, ${remaining} rooms left)
+Build toward the final confrontation. Callback to earlier NPCs, items, and choices. High stakes — every room matters. Boss-tier enemies possible. Begin resolving quest lines. Create urgency.
+STORY BEAT for this room: "${beat}" — shape the room around this narrative function.`;
+            break;
+        case 'finale':
+            phaseInstr = `★ FINALE — FINAL ROOM (Room ${room}/${max}, THIS IS THE LAST ROOM)
+This is the ENDING of the story. The player reaches the final destination. Include:
+- A powerful final boss OR a climactic NPC confrontation that resolves the central conflict
+- Callbacks to key NPCs and choices from earlier rooms
+- NO EXITS — the story ends here
+- The boss/confrontation outcome determines the ending
+- Make it MEMORABLE and DRAMATIC — this is the payoff for the entire journey
+- The room should feel like a culmination of everything that came before`;
+            break;
+    }
+
+    return `NARRATIVE STRUCTURE:
+The game has ${max} total rooms. This is room ${room}. The story MUST conclude by room ${max}.
+
+${phaseInstr}
+
+PACING RULES:
+- The player's MORAL ALIGNMENT affects NPC reactions: pacifist players find more allies; violent players face more hostility
+- Every room must advance the plot — no filler rooms
+- Reference the story_summary in context to maintain continuity
+- Build toward the ending: plant seeds early, pay them off later
+- Vary the emotional tone between rooms (not all tense, not all calm)`;
+}
+
+function getAntiRepetitionRules(ctx) {
+    const parts = [];
+    if (ctx.used_room_names?.length) parts.push(`DO NOT reuse these room names: ${ctx.used_room_names.join(', ')}`);
+    if (ctx.used_npc_names?.length) parts.push(`DO NOT reuse these NPC names: ${ctx.used_npc_names.join(', ')}`);
+    if (ctx.used_enemy_names?.length) parts.push(`DO NOT reuse these enemy names: ${ctx.used_enemy_names.join(', ')}`);
+    if (!parts.length) return '';
+    return `\nANTI-REPETITION (CRITICAL — use COMPLETELY DIFFERENT names and concepts):\n${parts.join('\n')}`;
+}
 
 const ROOM_SCHEMA = `{
   "room_id": "unique_string",
@@ -111,14 +173,19 @@ export class GeminiClient {
 
     setTheme(theme) { this.theme = theme; }
 
-    getSystemPrompt() {
+    getSystemPrompt(storyContext) {
         const t = THEME_PROMPTS[this.theme] || THEME_PROMPTS.cyberpunk;
+        const ctx = storyContext || {};
         return `You are the game master for "Unifactory", an AI-powered 2D RPG with Undertale-style combat.
 You generate ALL game content as structured JSON. You drive the narrative, world, NPCs, enemies, quests, and shops.
 
 ${t.world}
 
-${STORY_STRUCTURE}
+${getStoryStructure(ctx)}
+${getAntiRepetitionRules(ctx)}
+
+STORY SO FAR:
+${(ctx.story_summary || []).join(' → ') || 'The adventure is just beginning.'}
 
 GAME RULES:
 1. Return ONLY valid JSON — never prose, markdown, or explanation
@@ -140,13 +207,13 @@ GAME RULES:
 17. The player's chosen enemy_presets should bias which enemy types appear`;
     }
 
-    async callGemini(userMessage) {
+    async callGemini(userMessage, storyContext) {
         const body = {
-            systemInstruction: { parts: [{ text: this.getSystemPrompt() }] },
+            systemInstruction: { parts: [{ text: this.getSystemPrompt(storyContext) }] },
             contents: [{ role: 'user', parts: [{ text: userMessage }] }],
             generationConfig: {
                 responseMimeType: 'application/json',
-                temperature: 0.85,
+                temperature: 0.88,
                 maxOutputTokens: 8192
             }
         };
@@ -170,9 +237,55 @@ GAME RULES:
     }
 
     async generateRoom(storyContext, trigger) {
+        const isFinale = storyContext.is_finale;
+        const phase = storyContext.story_phase || 'setup';
+        const room = storyContext.room_number || 1;
+        const max = storyContext.max_rooms || 10;
+
         const triggerDesc = trigger
             ? `The player just: ${trigger}`
             : 'The adventure begins. Generate the FIRST room — atmospheric, intriguing, with NPCs to meet and a quest to start.';
+
+        let finaleBlock = '';
+        if (isFinale) {
+            finaleBlock = `
+★★★ THIS IS THE FINALE ROOM — THE LAST ROOM IN THE GAME ★★★
+CRITICAL REQUIREMENTS:
+- Set "is_finale": true in the JSON
+- Include a POWERFUL final boss enemy with high stats (hp: 40-80, atk: 8-15)
+- The boss should be thematically tied to the central conflict
+- Include 0-1 NPCs who provide final context or callbacks to earlier story
+- Include NO EXITS — the exits array MUST be empty []
+- The narration should feel like a climactic moment
+- Add a "finale_narration" field: a 2-3 sentence dramatic description of reaching the end
+- Boss defeat_dialogue and spare_dialogue should feel like ENDINGS, not just combat outro
+- Reference the player's journey and choices in dialogue`;
+        }
+
+        let phaseHints = '';
+        switch (phase) {
+            case 'setup':
+                phaseHints = `- This early room should establish atmosphere and introduce key NPCs
+- Include a quest that plants seeds for the larger conflict
+- Keep danger low but hint at darker things ahead`;
+                break;
+            case 'rising':
+                phaseHints = `- Escalate tension and danger — more enemies, higher stakes
+- Subvert expectations — an ally betrays, a safe place turns dangerous
+- Reference NPCs/events from earlier rooms for continuity`;
+                break;
+            case 'climax':
+                phaseHints = `- High stakes — every encounter matters
+- Resolve earlier quest threads where possible
+- NPCs should reference the approaching endgame`;
+                break;
+        }
+
+        const enemyGuidance = phase === 'setup'
+            ? '- 0-1 enemies (low danger)'
+            : phase === 'rising'
+                ? '- 1-2 enemies (escalating threat)'
+                : '- 1-2 enemies (powerful, significant)';
 
         const prompt = `ACTION: generate_room
 
@@ -180,27 +293,31 @@ STORY STATE:
 ${JSON.stringify(storyContext, null, 1)}
 
 ${triggerDesc}
+${finaleBlock}
 
 Generate a room using this schema:
 ${ROOM_SCHEMA}
+${isFinale ? '"is_finale": true, "finale_narration": "dramatic 2-3 sentence ending setup"' : ''}
 
 ${QUEST_SCHEMA}
 
 ${SHOP_SCHEMA}
 
-THIS ROOM MUST HAVE:
-- 2-4 NPCs (at least one merchant OR quest-giver)
+THIS ROOM MUST HAVE (Room ${room}/${max}, phase: ${phase}):
+- 2-4 NPCs (at least one merchant OR quest-giver)${isFinale ? ' — UNLESS this is the finale (0-1 NPCs)' : ''}
 - 4-8 decorations for atmosphere (use theme decoration types)
 - 3-5 obstacles
-- 1-3 exits
+${isFinale ? '- 0 exits (THIS IS THE LAST ROOM)' : '- 1-3 exits'}
 - 0-2 items
 - 0-1 interactables
-- 0-1 enemies (more likely after chapter 3)
+${enemyGuidance}
+${phaseHints}
 - Each enemy needs 2-3 creative ACT options with effects
 - Dark bg colors, vivid accent colors
-- Narration should set the mood immediately`;
+- Narration should set the mood immediately
+- ALL names must be UNIQUE — never reuse names from previous rooms`;
 
-        const spec = await this.callGemini(prompt);
+        const spec = await this.callGemini(prompt, storyContext);
         return this.validateRoom(spec);
     }
 
@@ -236,7 +353,7 @@ STRICT RULES:
 - Do NOT create open-ended loops. Conversations should resolve quickly.
 - If the player is just chatting, wrap it up in 1 reply with choices: [].`;
 
-        return await this.callGemini(prompt);
+        return await this.callGemini(prompt, storyContext);
     }
 
     async interactObject(objectId, objectInfo, storyContext) {
@@ -260,7 +377,35 @@ Return JSON:
   }
 }`;
 
-        return await this.callGemini(prompt);
+        return await this.callGemini(prompt, storyContext);
+    }
+
+    async generateEndingNarration(storyContext, endingType) {
+        const prompt = `ACTION: generate_ending
+
+The game is over. Generate a poetic ending narration for the player.
+
+STORY STATE:
+${JSON.stringify(storyContext, null, 1)}
+
+ENDING TYPE: ${endingType.id} — "${endingType.title}"
+${endingType.desc}
+
+Return JSON:
+{
+  "title": "A dramatic ending title (3-6 words)",
+  "narration": ["Line 1 (poetic, atmospheric)", "Line 2", "Line 3", "Line 4 (final reflection)"],
+  "epilogue": "A single sentence about what happened after (bittersweet or triumphant based on ending type)"
+}
+
+RULES:
+- Reference specific events, NPCs, and choices from the story_summary
+- The tone should match the ending type (pacifist = hopeful, violent = dark, etc.)
+- Make the player FEEL something — this is the last thing they read
+- 3-5 narration lines, each under 100 characters
+- The epilogue hints at what comes next (but the story is over)`;
+
+        return await this.callGemini(prompt, storyContext);
     }
 
     validateRoom(spec) {

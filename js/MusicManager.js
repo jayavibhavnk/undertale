@@ -25,14 +25,38 @@ const PROMPTS = {
     combat_space: `Intense sci-fi combat music for an RPG fight. Instrumental only, no vocals. Electronic orchestra hybrid, pulsing energy-beam synths, dramatic brass-like leads, rapid snare percussion, laser-effect arpeggios. Zero-gravity battle for survival. Tempo: 130 BPM. Seamlessly loopable.`,
 };
 
+const MOOD_PROMPT_FLAVOR = {
+    calm:       { energy: 'gentle, relaxed', tempo: '75 BPM', feel: 'peaceful wandering, soft warmth' },
+    peaceful:   { energy: 'serene, pastoral', tempo: '70 BPM', feel: 'tranquil beauty, safe haven' },
+    tense:      { energy: 'suspenseful, alert', tempo: '100 BPM', feel: 'something is wrong, hidden danger' },
+    eerie:      { energy: 'haunting, unsettling', tempo: '65 BPM', feel: 'creeping dread, whispers in the dark' },
+    mysterious: { energy: 'enigmatic, curious', tempo: '80 BPM', feel: 'ancient secrets, forbidden knowledge' },
+    dangerous:  { energy: 'threatening, intense', tempo: '110 BPM', feel: 'imminent peril, fight or flight' },
+    hopeful:    { energy: 'uplifting, bright', tempo: '90 BPM', feel: 'dawn breaking, new beginnings' },
+    sad:        { energy: 'melancholic, somber', tempo: '60 BPM', feel: 'loss, bittersweet memories' },
+    triumphant: { energy: 'victorious, grand', tempo: '120 BPM', feel: 'celebration, hard-won glory' },
+};
+
+const THEME_INSTRUMENTS = {
+    cyberpunk: 'analog synths, glitch textures, sub-bass, neon-tinged electronic tones, retro-digital arpeggios',
+    medieval:  'acoustic lute, wooden flute, cello, harp, subtle choir pads, string ensemble',
+    space:     'cosmic synth drones, ethereal shimmer pads, distant radio signals, electronic hum, isolated piano',
+};
+
+function buildDynamicPrompt(theme, mood) {
+    const flavor = MOOD_PROMPT_FLAVOR[mood] || MOOD_PROMPT_FLAVOR.mysterious;
+    const instruments = THEME_INSTRUMENTS[theme] || THEME_INSTRUMENTS.cyberpunk;
+    return `${flavor.energy} RPG exploration music for a ${theme} world. Instrumental only, no vocals. `
+        + `Instruments: ${instruments}. `
+        + `Mood: ${flavor.feel}. Tempo: ${flavor.tempo}. `
+        + `Seamlessly loopable game background music. High quality, cinematic.`;
+}
+
 export function getMusicKey(type, theme, mood) {
     if (type === 'menu') return 'menu';
     if (type === 'intro') return `intro_${theme}`;
     if (type === 'combat') return `combat_${theme}`;
-    if (type === 'explore') {
-        const cat = ['calm', 'peaceful'].includes(mood) ? 'calm' : 'tense';
-        return `explore_${theme}_${cat}`;
-    }
+    if (type === 'explore') return `explore_${theme}_${mood || 'calm'}`;
     return null;
 }
 
@@ -66,7 +90,11 @@ class MusicManager {
         if (this.bufferCache[cacheKey]) return this.bufferCache[cacheKey];
         if (this.pendingRequests[cacheKey]) return this.pendingRequests[cacheKey];
 
-        const prompt = PROMPTS[cacheKey];
+        let prompt = PROMPTS[cacheKey];
+        if (!prompt) {
+            const parts = cacheKey.match(/^explore_(\w+)_(\w+)$/);
+            if (parts) prompt = buildDynamicPrompt(parts[1], parts[2]);
+        }
         if (!prompt || !this.apiKey) return null;
 
         const req = (async () => {

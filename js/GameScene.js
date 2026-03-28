@@ -53,12 +53,21 @@ export default class GameScene extends Phaser.Scene {
         }
 
         // Remove defeated enemies
+        let finaleVictory = false;
         if (this.combatResult) {
             const eid = this.combatResult.enemyId;
             if (this.enemyDataMap[eid]) {
                 this.enemyDataMap[eid].sprite.destroy();
                 if (this.enemyDataMap[eid].label) this.enemyDataMap[eid].label.destroy();
                 delete this.enemyDataMap[eid];
+            }
+            if (this.isFinaleRoom()) {
+                const remaining = Object.keys(this.enemyDataMap).length;
+                if (remaining === 0) {
+                    const outcome = this.combatResult.result === 'spared' ? 'spared' : 'defeated';
+                    storyState.addSummary(`Finale: ${outcome} the final enemy`);
+                    finaleVictory = true;
+                }
             }
         }
 
@@ -96,20 +105,69 @@ export default class GameScene extends Phaser.Scene {
         if (music) {
             const theme = storyState.theme || 'cyberpunk';
             const mood = spec.mood || 'calm';
-            const cat = ['calm', 'peaceful'].includes(mood) ? 'calm' : 'tense';
-            music.play(`explore_${theme}_${cat}`);
+            music.play(`explore_${theme}_${mood}`);
         }
 
         if (spec.narration && !this.combatResult) {
-            this.time.delayedCall(600, () => this.showDialogue('', [spec.narration], [], null));
+            const finaleLines = spec.finale_narration
+                ? [spec.finale_narration, spec.narration]
+                : [spec.narration];
+            this.time.delayedCall(600, () => this.showDialogue('', finaleLines, [], null));
+        }
+
+        if (this.isFinaleRoom() && !this.combatResult) {
+            const hasEnemies = Object.keys(this.enemyDataMap || {}).length > 0;
+            if (!hasEnemies) {
+                this.time.delayedCall(8000, () => {
+                    if (!storyState.endingTriggered && this.mode === 'explore') {
+                        this.triggerEnding();
+                    }
+                });
+            }
         }
 
         this.preloadEnemyCutscenes();
+        this.preloadExitCutscenes();
+
+        if (finaleVictory) {
+            this.time.delayedCall(1500, () => this.triggerEnding());
+        }
+    }
+
+    preloadExitCutscenes() {
+        const cutsceneClient = this.registry.get('cutsceneClient');
+        if (!cutsceneClient?.hasSession) return;
+
+        const exits = this.roomSpec.exits || [];
+        if (exits.length === 0) return;
+
+        this._exitCutsceneKeys = {};
+        const requests = [];
+
+        for (const exit of exits) {
+            const key = `room_transition_${this.roomSpec.room_id}_${exit.direction}_${(exit.label || 'unknown').replace(/\s+/g, '_').toLowerCase()}`;
+            this._exitCutsceneKeys[exit.id] = key;
+            requests.push({
+                cache_key: key,
+                trigger_type: 'room_transition',
+                context: {
+                    direction: exit.direction,
+                    destination: exit.label || 'unknown',
+                    current_room: this.roomSpec.name || '',
+                    room_mood: this.roomSpec.mood || '',
+                    theme: storyState.theme || 'cyberpunk',
+                },
+            });
+        }
+
+        cutsceneClient.preload(requests).then(res => {
+            if (res.queued?.length) console.log('[cutscene] preloading exit cutscenes:', res.queued);
+        }).catch(() => {});
     }
 
     preloadEnemyCutscenes() {
         const cutsceneClient = this.registry.get('cutsceneClient');
-        if (!cutsceneClient?.ready) return;
+        if (!cutsceneClient?.hasSession) return;
 
         const alive = (this.roomSpec.enemies || []).filter(e =>
             !storyState.npcsDefeated.includes(e.id) &&
@@ -594,8 +652,10 @@ export default class GameScene extends Phaser.Scene {
         const W = this.scale.width;
         this.hud = {};
         const roomName = this.roomSpec.name || '';
-        this.hud.roomNameBg = this.add.rectangle(W / 2, 6, Math.max(60, roomName.length * 7 + 16), 14, 0x000000, 0.5).setOrigin(0.5, 0).setDepth(30);
-        this.hud.roomName = this.add.text(W / 2, 8, roomName, { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#888888' }).setOrigin(0.5, 0).setDepth(31);
+        const progressTag = `${storyState.roomNumber}/${storyState.maxRooms}`;
+        const displayName = `${roomName}  [${progressTag}]`;
+        this.hud.roomNameBg = this.add.rectangle(W / 2, 6, Math.max(60, displayName.length * 6 + 16), 14, 0x000000, 0.5).setOrigin(0.5, 0).setDepth(30);
+        this.hud.roomName = this.add.text(W / 2, 8, displayName, { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#888888' }).setOrigin(0.5, 0).setDepth(31);
 
         this.hud.hpIcon = this.add.image(WALL + 8, WALL + 10, 'hp_heart').setScale(0.9).setDepth(31);
         this.add.rectangle(WALL + 60, WALL + 7, 82, 10, 0x333333).setOrigin(0.5, 0).setDepth(30);
@@ -1201,7 +1261,7 @@ export default class GameScene extends Phaser.Scene {
             });
         };
 
-        if (!cutsceneClient?.ready || !cutscenePlayer) {
+        if (!cutsceneClient?.hasSession || !cutscenePlayer) {
             launchCombat();
             return;
         }
@@ -1234,8 +1294,11 @@ export default class GameScene extends Phaser.Scene {
         ]).catch(() => {});
 
         const pollMs = 2500;
+        const startTime = Date.now();
+        const maxWaitMs = 180000;
 
         const poll = () => {
+            if (Date.now() - startTime > maxWaitMs) { cleanup(); launchCombat(); return; }
             cutsceneClient.checkCache(key).then(cached => {
                 if (cached?.status === 'complete' && cached.video_url) {
                     sub.setText('🎬 Playing cinematic...');
@@ -1253,7 +1316,9 @@ export default class GameScene extends Phaser.Scene {
                     if (cached?.status === 'generating_video') sub.setText('🎬 Rendering cinematic...');
                     else if (cached?.status === 'generating') sub.setText('🎬 Building scene...');
                     else if (cached?.status === 'waiting_rate_limit') sub.setText('⏳ Queued for render...');
-                    else if (!cached || cached.status === 'not_found' || cached.status === 'queued') sub.setText('⏳ Preparing cinematic...');
+                    else if (cached?.status === 'not_found' && !cutsceneClient.ready) sub.setText('⏳ Initializing video engine...');
+                    else if (cached?.status === 'not_found') sub.setText('⏳ Waiting for cinematic...');
+                    else sub.setText('⏳ Preparing cinematic...');
                     this.time.delayedCall(pollMs, poll);
                 }
             }).catch(() => { this.time.delayedCall(pollMs, poll); });
@@ -1271,6 +1336,7 @@ export default class GameScene extends Phaser.Scene {
         const opposites = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' };
         const entryDir = opposites[exit.direction] || 'bottom';
         const trigger = `exited ${exit.direction} toward "${exit.label || 'unknown'}"`;
+        const preloadedCutsceneKey = this._exitCutsceneKeys?.[exit.id] || null;
         this.cameras.main.flash(200, 255, 255, 255);
         this.cameras.main.once('cameraflashcomplete', () => {
             this.cameras.main.fadeOut(400);
@@ -1282,8 +1348,37 @@ export default class GameScene extends Phaser.Scene {
                     exitLabel: exit.label || '',
                     roomName: this.roomSpec.name || '',
                     roomMood: this.roomSpec.mood || '',
+                    preloadedCutsceneKey,
                 });
             });
+        });
+    }
+
+    // === FINALE ===
+    isFinaleRoom() {
+        return this.roomSpec.is_finale ||
+            storyState.isFinaleRoom() ||
+            (this.roomSpec.exits || []).length === 0;
+    }
+
+    triggerEnding() {
+        if (storyState.endingTriggered) return;
+        storyState.endingTriggered = true;
+        const endingType = storyState.getEndingType();
+
+        this.mode = 'cutscene';
+        this.player?.setVelocity(0);
+
+        const W = this.scale.width, H = this.scale.height;
+        const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0).setDepth(999);
+        this.tweens.add({
+            targets: overlay, alpha: 1, duration: 3000,
+            onComplete: () => {
+                this.scene.start('EndingScene', {
+                    endingType,
+                    finaleNarration: this.roomSpec.finale_narration || null
+                });
+            }
         });
     }
 

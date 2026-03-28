@@ -6,7 +6,7 @@ act transitions, and narrative moments.
 Run:  python server.py
 """
 
-import json, uuid, time, threading, mimetypes, io, base64
+import json, uuid, time, threading, mimetypes, io, base64, traceback
 import requests as http_requests
 from pathlib import Path
 from datetime import datetime
@@ -57,7 +57,8 @@ MODELS = {
     "image_fast": "gemini-3.1-flash-image-preview",
     "image_pro":  "gemini-3-pro-image-preview",
     "music":      "lyria-3-clip-preview",
-    "video":      "veo-3.1-preview",
+    "video":      "veo-3.1-generate-preview",
+    "video_fast": "veo-3.1-fast-generate-preview",
     "text":       "gemini-3.1-flash-lite-preview",
 }
 
@@ -107,7 +108,18 @@ class VideoRateLimiter:
             return max(0, 60 - (now - self.timestamps[0]))
 
 
-rate_limiter = VideoRateLimiter(max_per_minute=9)
+VIDEO_CHANNELS = {
+    "fast": {
+        "model_id": f"models/{MODELS['video_fast']}",
+        "limiter": VideoRateLimiter(max_per_minute=9),
+    },
+    "standard": {
+        "model_id": f"models/{MODELS['video']}",
+        "limiter": VideoRateLimiter(max_per_minute=9),
+    },
+}
+
+FAST_TRIGGERS = {"first_room", "boss_intro", "boss_outcome_victory", "boss_outcome_spare"}
 
 video_cache: Dict[str, Dict[str, Any]] = {}
 _cache_lock = threading.Lock()
@@ -117,7 +129,7 @@ _job_queue: PriorityQueue = PriorityQueue()
 
 TRIGGER_PRIORITIES = {
     "boss_intro": 0, "boss_outcome_victory": 0, "boss_outcome_spare": 0,
-    "act_transition": 1, "first_room": 1,
+    "act_transition": 1, "first_room": 1, "room_transition": 1,
     "key_item": 2, "game_over": 2,
 }
 
@@ -337,12 +349,21 @@ Output exactly one master reference sheet image.
 
 def _extract_first_image(response) -> Image.Image:
     candidates = []
-    if hasattr(response, "parts") and response.parts:
-        candidates.extend(response.parts)
-    if hasattr(response, "candidates") and response.candidates:
-        for c in response.candidates:
-            if hasattr(c, "content") and hasattr(c.content, "parts"):
-                candidates.extend(c.content.parts)
+    try:
+        if response.parts:
+            candidates.extend(response.parts)
+    except Exception:
+        pass
+    try:
+        if response.candidates:
+            for c in response.candidates:
+                try:
+                    if c.content and c.content.parts:
+                        candidates.extend(c.content.parts)
+                except Exception:
+                    pass
+    except Exception:
+        pass
     for part in candidates:
         try:
             img = part.as_image()
@@ -350,26 +371,42 @@ def _extract_first_image(response) -> Image.Image:
                 return img
         except Exception:
             pass
-    raise ValueError("No image found in model response.")
+        try:
+            if hasattr(part, 'inline_data') and part.inline_data:
+                img_bytes = part.inline_data.data
+                if img_bytes:
+                    return Image.open(io.BytesIO(img_bytes))
+        except Exception:
+            pass
+    raise ValueError(f"No image found in model response. Candidates count: {len(candidates)}")
 
 
-def generate_master_sheet(client, spec: CharacterSpec) -> Dict[str, Any]:
+def generate_master_sheet(client, spec: CharacterSpec,
+                          retries: int = 2) -> Dict[str, Any]:
     prompt = _build_master_sheet_prompt(spec)
-    response = client.models.generate_content(
-        model=MODELS["image_fast"], contents=[prompt],
-        config=types.GenerateContentConfig(
-            response_modalities=["Image"],
-            image_config=types.ImageConfig(aspect_ratio="1:1", image_size="2K"),
-        ),
-    )
-    img = _extract_first_image(response)
-    img_path = MASTER_SHEETS_DIR / f"{spec.character_id}_master_sheet.png"
-    img.save(img_path)
-    meta = {"character_id": spec.character_id, "model": MODELS["image_fast"],
-            "path": str(img_path), "prompt": prompt}
-    meta_path = MASTER_SHEETS_DIR / f"{spec.character_id}_master_sheet_meta.json"
-    meta_path.write_text(json.dumps(meta, indent=2))
-    return {"image_path": img_path, "meta_path": meta_path}
+    for attempt in range(retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=MODELS["image_fast"], contents=[prompt],
+                config=types.GenerateContentConfig(
+                    response_modalities=["Image"],
+                    image_config=types.ImageConfig(aspect_ratio="1:1", image_size="2K"),
+                ),
+            )
+            img = _extract_first_image(response)
+            img_path = MASTER_SHEETS_DIR / f"{spec.character_id}_master_sheet.png"
+            img.save(img_path)
+            meta = {"character_id": spec.character_id, "model": MODELS["image_fast"],
+                    "path": str(img_path), "prompt": prompt}
+            meta_path = MASTER_SHEETS_DIR / f"{spec.character_id}_master_sheet_meta.json"
+            meta_path.write_text(json.dumps(meta, indent=2))
+            return {"image_path": img_path, "meta_path": meta_path}
+        except Exception as e:
+            print(f"[init] master sheet attempt {attempt+1} failed: {e}")
+            if attempt < retries:
+                time.sleep(3)
+            else:
+                raise
 
 
 # ── scene anchor ──
@@ -401,20 +438,29 @@ Requirements:
 
 
 def generate_scene_anchor(client, spec: CharacterSpec,
-                          master_sheet_path: Path) -> Dict[str, Any]:
+                          master_sheet_path: Path,
+                          retries: int = 2) -> Dict[str, Any]:
     prompt = _build_scene_anchor_prompt(spec)
     master_img = Image.open(master_sheet_path)
-    response = client.models.generate_content(
-        model=MODELS["image_fast"], contents=[prompt, master_img],
-        config=types.GenerateContentConfig(
-            response_modalities=["Image"],
-            image_config=types.ImageConfig(aspect_ratio="16:9", image_size="2K"),
-        ),
-    )
-    anchor_img = _extract_first_image(response)
-    anchor_path = VIDEO_REFS_DIR / f"{spec.character_id}_scene_anchor.png"
-    anchor_img.save(anchor_path)
-    return {"anchor_path": anchor_path}
+    for attempt in range(retries + 1):
+        try:
+            response = client.models.generate_content(
+                model=MODELS["image_fast"], contents=[prompt, master_img],
+                config=types.GenerateContentConfig(
+                    response_modalities=["Image"],
+                    image_config=types.ImageConfig(aspect_ratio="16:9", image_size="2K"),
+                ),
+            )
+            anchor_img = _extract_first_image(response)
+            anchor_path = VIDEO_REFS_DIR / f"{spec.character_id}_scene_anchor.png"
+            anchor_img.save(anchor_path)
+            return {"anchor_path": anchor_path}
+        except Exception as e:
+            print(f"[init] scene anchor attempt {attempt+1} failed: {e}")
+            if attempt < retries:
+                time.sleep(3)
+            else:
+                raise
 
 
 # ── veo package ──
@@ -500,12 +546,13 @@ def _build_ref_images(scene_package: Dict[str, Any]):
     imgs = scene_package.get("reference_images", [])
     if not imgs:
         return refs
-    anchor = imgs[-1]
-    try:
-        refs.append(types.VideoGenerationReferenceImage(
-            image=_make_genai_image(anchor), reference_type="asset"))
-    except Exception as e:
-        print(f"[warn] failed to load anchor: {e}")
+    for img_path in reversed(imgs):
+        try:
+            refs.append(types.VideoGenerationReferenceImage(
+                image=_make_genai_image(img_path), reference_type="asset"))
+            break
+        except Exception as e:
+            print(f"[warn] failed to load ref image {img_path}: {e}")
     return refs
 
 
@@ -533,18 +580,20 @@ def _download_video(video_obj, save_path: Path, api_key: str):
 
 
 def generate_video(client, api_key: str, scene_package: Dict[str, Any],
-                   retries: int = 1) -> Path:
+                   retries: int = 1, model_id: str = None) -> Path:
     prompt = scene_package["scene_prompt"]
     sid = scene_package["scene_id"]
     refs = _build_ref_images(scene_package)
     if not refs:
         raise ValueError("No valid reference images")
 
+    veo_model = model_id or VIDEO_CHANNELS["standard"]["model_id"]
+
     attempt = 0
     while attempt <= retries:
         try:
             op = client.models.generate_videos(
-                model="models/veo-3.1-generate-preview",
+                model=veo_model,
                 prompt=prompt,
                 config=types.GenerateVideosConfig(
                     reference_images=refs, resolution="720p",
@@ -560,11 +609,12 @@ def generate_video(client, api_key: str, scene_package: Dict[str, Any],
             _download_video(completed.response.generated_videos[0].video,
                             video_path, api_key)
 
-            meta = {"scene_id": sid, "video_path": str(video_path), "prompt": prompt}
+            meta = {"scene_id": sid, "video_path": str(video_path),
+                    "prompt": prompt, "model": veo_model}
             (VIDEOS_DIR / f"{sid}_meta.json").write_text(json.dumps(meta, indent=2))
             return video_path
         except Exception as e:
-            print(f"[video] attempt {attempt+1} failed: {e}")
+            print(f"[video] attempt {attempt+1} failed ({veo_model}): {e}")
             attempt += 1
             if attempt > retries:
                 raise
@@ -721,6 +771,17 @@ Location: {context.get('room_name', 'the current location')}
 
 Camera: close-up on the item with dramatic lighting.
 Pull back to show the protagonist's reaction. A moment of revelation.""",
+
+        "room_transition": f"""SCENE TYPE: Room Transition — Journey Continues
+DURATION: 8 seconds
+
+The protagonist leaves "{context.get('current_room', 'the previous area')}" heading {context.get('direction', 'forward')} toward "{context.get('destination', 'the unknown')}".
+Theme: {context.get('theme', 'mysterious')}
+Mood: {context.get('room_mood', 'contemplative')}
+
+Camera: tracking shot following the protagonist through the environment.
+Transition from the previous area to glimpses of what lies ahead.
+Atmospheric, cinematic. Build anticipation for the next area.""",
     }
 
     body = prompts.get(trigger_type, f"""SCENE TYPE: Narrative Moment
@@ -734,6 +795,23 @@ Camera: cinematic medium shot with slow push-in.""")
 # ────────────────────────────────────────────────────────────
 # Queue worker threads
 # ────────────────────────────────────────────────────────────
+
+def _pick_channel(trigger_type):
+    """Pick the best video model channel. Try preferred first, fallback to other."""
+    if trigger_type in FAST_TRIGGERS:
+        preferred, fallback = "fast", "standard"
+    else:
+        preferred, fallback = "standard", "fast"
+
+    pref = VIDEO_CHANNELS[preferred]
+    fb = VIDEO_CHANNELS[fallback]
+
+    if pref["limiter"].remaining() > 0:
+        return preferred, pref["model_id"], pref["limiter"]
+    if fb["limiter"].remaining() > 0:
+        return fallback, fb["model_id"], fb["limiter"]
+    return preferred, pref["model_id"], pref["limiter"]
+
 
 def _queue_worker():
     while True:
@@ -756,17 +834,24 @@ def _queue_worker():
                 video_cache[cache_key]["status"] = "waiting_rate_limit"
                 video_cache[cache_key]["progress"] = 5
 
-            print(f"[queue] {cache_key} waiting for rate-limit slot (pri={priority})")
+            channel_name, model_id, limiter = _pick_channel(trigger_type)
+            print(f"[queue] {cache_key} → {channel_name} model (pri={priority})")
 
-            if not rate_limiter.acquire(timeout=180):
-                with _cache_lock:
-                    video_cache[cache_key] = {
-                        "status": "error", "progress": 0,
-                        "video_url": None, "error": "Rate limit timeout",
-                    }
-                print(f"[queue] {cache_key} rate-limit timeout")
-                _job_queue.task_done()
-                continue
+            if not limiter.acquire(timeout=90):
+                other_name = "standard" if channel_name == "fast" else "fast"
+                other = VIDEO_CHANNELS[other_name]
+                print(f"[queue] {cache_key} rate-limited on {channel_name}, trying {other_name}")
+                if not other["limiter"].acquire(timeout=90):
+                    with _cache_lock:
+                        video_cache[cache_key] = {
+                            "status": "error", "progress": 0,
+                            "video_url": None, "error": "Rate limit timeout (both models)",
+                        }
+                    print(f"[queue] {cache_key} rate-limit timeout on both models")
+                    _job_queue.task_done()
+                    continue
+                channel_name = other_name
+                model_id = other["model_id"]
 
             with _cache_lock:
                 video_cache[cache_key]["status"] = "generating"
@@ -795,14 +880,27 @@ def _queue_worker():
             pkg_path.write_text(json.dumps({
                 **scene_pkg, "trigger_type": trigger_type,
                 "context": {k: str(v)[:200] for k, v in context.items()},
+                "model_channel": channel_name,
             }, indent=2, default=str))
 
             with _cache_lock:
                 video_cache[cache_key]["status"] = "generating_video"
                 video_cache[cache_key]["progress"] = 30
 
-            print(f"[queue] {cache_key} generating video...")
-            video_path = generate_video(client, api_key, scene_pkg)
+            print(f"[queue] {cache_key} generating video via {channel_name}...")
+            try:
+                video_path = generate_video(client, api_key, scene_pkg,
+                                            model_id=model_id)
+            except Exception as gen_err:
+                fallback_name = "standard" if channel_name == "fast" else "fast"
+                fallback_model = VIDEO_CHANNELS[fallback_name]["model_id"]
+                print(f"[queue] {cache_key} {channel_name} failed: {gen_err}")
+                print(f"[queue] {cache_key} retrying with {fallback_name} model...")
+                with _cache_lock:
+                    video_cache[cache_key]["progress"] = 25
+                video_path = generate_video(client, api_key, scene_pkg,
+                                            model_id=fallback_model)
+                channel_name = fallback_name
 
             with _cache_lock:
                 video_cache[cache_key] = {
@@ -810,7 +908,7 @@ def _queue_worker():
                     "video_url": f"/api/videos/{video_path.name}",
                     "error": None,
                 }
-            print(f"[queue] {cache_key} complete -> {video_path.name}")
+            print(f"[queue] {cache_key} complete → {video_path.name} ({channel_name})")
 
         except Exception as e:
             if cache_key:
@@ -824,9 +922,9 @@ def _queue_worker():
         _job_queue.task_done()
 
 
-for _i in range(4):
+for _i in range(6):
     threading.Thread(target=_queue_worker, daemon=True).start()
-print("[queue] Started 4 video worker threads")
+print("[queue] Started 6 video worker threads (dual-model: standard + fast)")
 
 
 # ────────────────────────────────────────────────────────────
@@ -890,16 +988,24 @@ def init_character(req: InitRequest):
             sess["status"] = "generating_master_sheet"
             sess["progress"] = 20
             ms_result = generate_master_sheet(client, spec)
+            print(f"[init] master sheet done: {ms_result['image_path']}")
 
+            anchor_path = None
             sess["status"] = "generating_anchor"
             sess["progress"] = 50
-            anchor_result = generate_scene_anchor(client, spec,
-                                                  ms_result["image_path"])
+            try:
+                anchor_result = generate_scene_anchor(client, spec,
+                                                      ms_result["image_path"])
+                anchor_path = anchor_result["anchor_path"]
+                print(f"[init] scene anchor done: {anchor_path}")
+            except Exception as anchor_err:
+                print(f"[init] scene anchor failed (non-fatal): {anchor_err}")
+                traceback.print_exc()
 
             sess["status"] = "building_package"
             sess["progress"] = 80
             veo_pkg = build_veo_package(spec, ms_result["image_path"],
-                                        anchor_result["anchor_path"])
+                                        anchor_path)
             sess["veo_package"] = veo_pkg
             sess["client"] = client
 
@@ -917,7 +1023,8 @@ def init_character(req: InitRequest):
         except Exception as e:
             sess["status"] = "error"
             sess["error"] = str(e)
-            print(f"[init] error: {e}")
+            print(f"[init] FATAL error: {e}")
+            traceback.print_exc()
 
     threading.Thread(target=_run, daemon=True).start()
     return {"session_id": session_id}
@@ -944,11 +1051,12 @@ def request_cutscene(req: CutsceneRequest):
         raise HTTPException(400, f"Session not ready: {sess['status']}")
 
     cache_key = f"legacy_{req.session_id}_{uuid.uuid4().hex[:6]}"
-    _enqueue_preload(cache_key, req.session_id, "act_transition", {
-        "room_name": req.room_name,
+    _enqueue_preload(cache_key, req.session_id, "room_transition", {
+        "current_room": req.room_name,
         "room_mood": req.room_mood,
-        "exit_direction": req.exit_direction,
-        "exit_label": req.exit_label,
+        "direction": req.exit_direction,
+        "destination": req.exit_label,
+        "theme": req.story_context.get("theme", "cyberpunk"),
         "chapter": req.story_context.get("chapter", 1),
     })
     return {"scene_id": cache_key}
@@ -994,7 +1102,7 @@ def preload_cutscenes(req: PreloadRequest):
     return {
         "queued": queued,
         "already_cached": already,
-        "rate_limit_remaining": rate_limiter.remaining(),
+        "rate_limit_remaining": VIDEO_CHANNELS["standard"]["limiter"].remaining() + VIDEO_CHANNELS["fast"]["limiter"].remaining(),
     }
 
 
@@ -1014,10 +1122,20 @@ def cache_status(cache_key: str):
 
 @app.get("/api/rate-limit")
 def rate_limit_info():
+    std = VIDEO_CHANNELS["standard"]["limiter"]
+    fast = VIDEO_CHANNELS["fast"]["limiter"]
     return {
-        "remaining": rate_limiter.remaining(),
-        "next_slot_seconds": round(rate_limiter.next_slot_seconds(), 1),
-        "max_per_minute": rate_limiter.max_per_minute,
+        "standard": {
+            "remaining": std.remaining(),
+            "next_slot_seconds": round(std.next_slot_seconds(), 1),
+            "max_per_minute": std.max_per_minute,
+        },
+        "fast": {
+            "remaining": fast.remaining(),
+            "next_slot_seconds": round(fast.next_slot_seconds(), 1),
+            "max_per_minute": fast.max_per_minute,
+        },
+        "total_remaining": std.remaining() + fast.remaining(),
     }
 
 
@@ -1369,9 +1487,9 @@ def serve_music(filename: str):
 # ────────────────────────────────────────────────────────────
 if __name__ == "__main__":
     print("=" * 60)
-    print("  UNIFACTORY — AI Cutscene Backend (rate-limited)")
+    print("  UNIFACTORY — AI Cutscene Backend (dual-model)")
     print("  API running at http://localhost:8081")
-    print("  Rate limit: 9 videos/min (1 headroom from 10 cap)")
+    print("  Veo Standard: 9/min | Veo Fast: 9/min | ~18 RPM total")
     print("  Frontend should run at http://localhost:8080")
     print("=" * 60)
     uvicorn.run(app, host="0.0.0.0", port=8081)

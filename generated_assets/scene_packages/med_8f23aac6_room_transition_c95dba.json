@@ -1,0 +1,17 @@
+{
+  "scene_id": "med_8f23aac6_room_transition_c95dba",
+  "reference_images": [
+    "/Users/faisal./dev/glitch-hacks-ucla/undertale/generated_assets/master_sheets/med_8f23aac6_master_sheet.png",
+    "/Users/faisal./dev/glitch-hacks-ucla/undertale/generated_assets/video_refs/med_8f23aac6_scene_anchor.png"
+  ],
+  "scene_prompt": "Use the attached approved reference image(s) to preserve the same protagonist identity across the entire scene.\n\nPROTAGONIST\nPersistent story game protagonist.\nCharacter name: bjhbjh\nWorld: medieval\n\nIdentity requirements:\n- same face and facial identity, same hairstyle\n- same body proportions, same costume archetype\n- same signature accessories, same overall silhouette\n\nStyle: fantasy, cloth and leather, ornamental details, grounded medieval silhouette\nOutfit profile: tunic or cloak, belted waist, boots, small metal or leather accessories\nProps: journal, coin pouch, small blade or trinket\nCustomization:\n\nSTYLE\nCinematic game cutscene style.\nStylized but consistent with the approved master character sheet.\nReadable silhouette, clean visual storytelling, strong composition, game-trailer quality.\nWorld tone: medieval.\nEnvironment hint: castle halls, stone paths, torch-lit interiors\n\nNEGATIVE CONSTRAINTS\ndo not change age drastically; do not change face shape; do not change hair color unless requested; do not replace outfit with a different archetype; do not introduce extra limbs or malformed hands; do not alter glasses or signature accessories; do not drift into a different art style mid-generation; do not change the character into a different person; do not alter costume colors significantly; do not add random accessories; do not introduce visual drift between shots; do not make the character look older or younger; do not change the art direction dramatically\n\nSCENE TYPE: Room Transition \u2014 Journey Continues\nDURATION: 8 seconds\n\nThe protagonist leaves \"Fading Hamlet\" heading bottom toward \"Village Gate\".\nTheme: medieval\nMood: eerie\n\nCamera: tracking shot following the protagonist through the environment.\nTransition from the previous area to glimpses of what lies ahead.\nAtmospheric, cinematic. Build anticipation for the next area.",
+  "trigger_type": "room_transition",
+  "context": {
+    "direction": "bottom",
+    "destination": "Village Gate",
+    "current_room": "Fading Hamlet",
+    "room_mood": "eerie",
+    "theme": "medieval"
+  },
+  "model_channel": "standard"
+}
