@@ -1,7 +1,6 @@
 import storyState from './storyState.js';
 
 const WALL = 16, DOOR_GAP = 48, SPEED = 155;
-
 const THEME_PARTICLES = {
     cyberpunk: { colors: [0x00ffff, 0xff00ff, 0x00ff88, 0xff6600], style: 'neon' },
     medieval:  { colors: [0xffaa44, 0xff8822, 0xffcc66, 0xffffaa], style: 'dust' },
@@ -26,7 +25,6 @@ export default class GameScene extends Phaser.Scene {
 
         storyState.visitRoom(spec.room_id);
 
-        // Physics groups
         this.walls = this.physics.add.staticGroup();
         this.obstacleGroup = this.physics.add.staticGroup();
         this.exitZones = this.physics.add.staticGroup();
@@ -35,12 +33,12 @@ export default class GameScene extends Phaser.Scene {
         this.interactGroup = this.physics.add.staticGroup();
         this.enemyGroup = this.physics.add.staticGroup();
 
-        // Build room
         this.npcDataMap = {};
         this.enemyDataMap = {};
         this.buildWalls(spec);
         this.drawFloor(spec);
-        this.addAmbientEffects(spec);
+        this.addDecorations(spec);
+        this.addAmbientParticles(spec);
         this.buildObstacles(spec.obstacles || []);
         this.buildExits(spec.exits || []);
         this.buildItems(spec.items || []);
@@ -48,6 +46,11 @@ export default class GameScene extends Phaser.Scene {
         this.buildNPCs(spec.npcs || []);
         this.buildEnemies(spec.enemies || []);
         this.addVignette();
+
+        // Register quests from NPCs
+        for (const npc of (spec.npcs || [])) {
+            if (npc.quest) storyState.addQuest(npc.quest);
+        }
 
         // Remove defeated enemies
         if (this.combatResult) {
@@ -61,14 +64,10 @@ export default class GameScene extends Phaser.Scene {
 
         // Player
         const start = this.getStartPos();
-        this.player = this.physics.add.sprite(start.x, start.y, 'player_down');
-        this.player.setDepth(10).setCollideWorldBounds(true);
+        this.player = this.physics.add.sprite(start.x, start.y, 'player_down').setDepth(10).setCollideWorldBounds(true);
         this.player.body.setSize(14, 18).setOffset(3, 10);
-
-        // Player shadow
         this.playerShadow = this.add.ellipse(start.x, start.y + 14, 16, 6, 0x000000, 0.3).setDepth(9);
 
-        // Collisions
         this.physics.add.collider(this.player, this.walls);
         this.physics.add.collider(this.player, this.obstacleGroup);
         this.physics.add.collider(this.player, this.npcGroup);
@@ -76,32 +75,25 @@ export default class GameScene extends Phaser.Scene {
         this.physics.add.overlap(this.player, this.exitZones, this.onExit, null, this);
         this.physics.add.overlap(this.player, this.itemGroup, this.onItem, null, this);
 
-        // Input
         this.cursors = this.input.keyboard.createCursorKeys();
         this.zKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.Z);
         this.xKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.X);
 
-        // HUD
         this.buildHUD();
-
-        // Dialogue system
         this.initDialogue();
+        this.initQuestLog();
 
-        // State
         this.mode = 'explore';
         this.nearTarget = null;
         this.transitioning = false;
         this.walkTimer = 0;
+        this.shopData = null;
 
-        // Audio
         this.setupAudio();
-
-        // Fade in then show narration
         this.cameras.main.fadeIn(500);
+
         if (spec.narration && !this.combatResult) {
-            this.time.delayedCall(600, () => {
-                this.showDialogue('', [spec.narration], [], null);
-            });
+            this.time.delayedCall(600, () => this.showDialogue('', [spec.narration], [], null));
         }
     }
 
@@ -120,23 +112,14 @@ export default class GameScene extends Phaser.Scene {
             else if (vx < 0) this.player.setTexture('player_left');
             else if (vx > 0) this.player.setTexture('player_right');
 
-            // Walk bob
-            if (vx || vy) {
-                this.walkTimer += delta * 0.008;
-                this.player.setY(this.player.y + Math.sin(this.walkTimer * 8) * 0.3);
-            }
-
-            // Shadow follows player
+            if (vx || vy) { this.walkTimer += delta * 0.008; this.player.y += Math.sin(this.walkTimer * 8) * 0.3; }
             this.playerShadow.setPosition(this.player.x, this.player.y + 14);
-
             this.checkProximity();
 
-            if (Phaser.Input.Keyboard.JustDown(this.zKey) && this.nearTarget) {
-                this.interact(this.nearTarget);
-            }
+            if (Phaser.Input.Keyboard.JustDown(this.zKey) && this.nearTarget) this.interact(this.nearTarget);
+            if (Phaser.Input.Keyboard.JustDown(this.xKey)) this.toggleQuestLog();
         }
 
-        // FIXED: separate branches so Z doesn't fire both advance AND select
         if (this.mode === 'dialogue') {
             if (this.dlgState.showingChoices) {
                 if (Phaser.Input.Keyboard.JustDown(this.cursors.up))
@@ -149,10 +132,24 @@ export default class GameScene extends Phaser.Scene {
                 if (Phaser.Input.Keyboard.JustDown(this.zKey)) this.advanceDialogue();
             }
         }
+
+        if (this.mode === 'questlog') {
+            if (Phaser.Input.Keyboard.JustDown(this.xKey) || Phaser.Input.Keyboard.JustDown(this.zKey))
+                this.toggleQuestLog();
+        }
+
+        if (this.mode === 'shop') {
+            if (Phaser.Input.Keyboard.JustDown(this.cursors.up))
+                this.shopIdx = Math.max(0, this.shopIdx - 1);
+            if (Phaser.Input.Keyboard.JustDown(this.cursors.down))
+                this.shopIdx = Math.min(this.shopItems.length, this.shopIdx + 1);
+            this.updateShopDisplay();
+            if (Phaser.Input.Keyboard.JustDown(this.zKey)) this.shopSelect();
+            if (Phaser.Input.Keyboard.JustDown(this.xKey)) this.closeShop();
+        }
     }
 
-    // === ROOM BUILDING ===
-
+    // === ENVIRONMENT ===
     norm(nx, ny) { return { x: WALL + nx * this.playW, y: WALL + ny * this.playH }; }
 
     buildWalls(spec) {
@@ -161,29 +158,51 @@ export default class GameScene extends Phaser.Scene {
         const exitDirs = new Map();
         for (const e of (spec.exits || [])) exitDirs.set(e.direction, e.position || 0.5);
 
-        if (exitDirs.has('top')) {
-            const g = WALL + exitDirs.get('top') * this.playW;
-            this.wallRect(0, 0, g - DOOR_GAP / 2, WALL, wc);
-            this.wallRect(g + DOOR_GAP / 2, 0, W - g - DOOR_GAP / 2, WALL, wc);
-        } else this.wallRect(0, 0, W, WALL, wc);
+        const sides = [
+            { dir: 'top', x: 0, y: 0, w: W, h: WALL, horiz: true },
+            { dir: 'bottom', x: 0, y: H - WALL, w: W, h: WALL, horiz: true },
+            { dir: 'left', x: 0, y: 0, w: WALL, h: H, horiz: false },
+            { dir: 'right', x: W - WALL, y: 0, w: WALL, h: H, horiz: false }
+        ];
 
-        if (exitDirs.has('bottom')) {
-            const g = WALL + exitDirs.get('bottom') * this.playW;
-            this.wallRect(0, H - WALL, g - DOOR_GAP / 2, WALL, wc);
-            this.wallRect(g + DOOR_GAP / 2, H - WALL, W - g - DOOR_GAP / 2, WALL, wc);
-        } else this.wallRect(0, H - WALL, W, WALL, wc);
+        for (const side of sides) {
+            if (exitDirs.has(side.dir)) {
+                const p = exitDirs.get(side.dir);
+                const g = side.horiz ? WALL + p * this.playW : WALL + p * this.playH;
+                if (side.horiz) {
+                    this.wallRect(0, side.y, g - DOOR_GAP / 2, WALL, wc);
+                    this.wallRect(g + DOOR_GAP / 2, side.y, W - g - DOOR_GAP / 2, WALL, wc);
+                } else {
+                    this.wallRect(side.x, 0, WALL, g - DOOR_GAP / 2, wc);
+                    this.wallRect(side.x, g + DOOR_GAP / 2, WALL, H - g - DOOR_GAP / 2, wc);
+                }
+            } else {
+                this.wallRect(side.x, side.y, side.w, side.h, wc);
+            }
+        }
 
-        if (exitDirs.has('left')) {
-            const g = WALL + exitDirs.get('left') * this.playH;
-            this.wallRect(0, 0, WALL, g - DOOR_GAP / 2, wc);
-            this.wallRect(0, g + DOOR_GAP / 2, WALL, H - g - DOOR_GAP / 2, wc);
-        } else this.wallRect(0, 0, WALL, H, wc);
+        // Wall detail pattern
+        const g = this.add.graphics().setDepth(0);
+        const wCol = Phaser.Display.Color.HexStringToColor(spec.wall_color || '#2a2a3e');
+        const detailColor = Phaser.Display.Color.GetColor(
+            Math.min(255, wCol.r + 15), Math.min(255, wCol.g + 15), Math.min(255, wCol.b + 15));
 
-        if (exitDirs.has('right')) {
-            const g = WALL + exitDirs.get('right') * this.playH;
-            this.wallRect(W - WALL, 0, WALL, g - DOOR_GAP / 2, wc);
-            this.wallRect(W - WALL, g + DOOR_GAP / 2, WALL, H - g - DOOR_GAP / 2, wc);
-        } else this.wallRect(W - WALL, 0, WALL, H, wc);
+        g.lineStyle(1, detailColor, 0.2);
+        const theme = storyState.theme;
+        if (theme === 'cyberpunk') {
+            for (let y = 0; y < WALL; y += 4) { g.lineBetween(0, y, W, y); g.lineBetween(0, H - y, W, H - y); }
+        } else if (theme === 'medieval') {
+            for (let x = 0; x < W; x += 12) for (let y = 0; y < WALL; y += 6) {
+                const off = (Math.floor(y / 6) % 2) * 6;
+                g.strokeRect(x + off, y, 12, 6);
+                g.strokeRect(x + off, H - WALL + y, 12, 6);
+            }
+        } else {
+            for (let x = 0; x < W; x += 20) {
+                g.lineBetween(x, 0, x, WALL);
+                g.lineBetween(x, H - WALL, x, H);
+            }
+        }
     }
 
     wallRect(x, y, w, h, color) {
@@ -198,108 +217,170 @@ export default class GameScene extends Phaser.Scene {
         const bg = Phaser.Display.Color.HexStringToColor(spec.bg_color || '#0a0a1e');
         const g = this.add.graphics().setDepth(0);
 
-        // Grid lines
-        const lc = Phaser.Display.Color.GetColor(
+        const lineC = Phaser.Display.Color.GetColor(
             Math.min(255, bg.r + 10), Math.min(255, bg.g + 10), Math.min(255, bg.b + 10));
-        g.lineStyle(1, lc, 0.08);
-        for (let x = WALL; x < W - WALL; x += 32)
-            g.lineBetween(x, WALL, x, H - WALL);
-        for (let y = WALL; y < H - WALL; y += 32)
-            g.lineBetween(WALL, y, W - WALL, y);
+        const detC = Phaser.Display.Color.GetColor(
+            Math.min(255, bg.r + 20), Math.min(255, bg.g + 20), Math.min(255, bg.b + 20));
 
-        // Random floor details
-        const dc = Phaser.Display.Color.GetColor(
-            Math.min(255, bg.r + 18), Math.min(255, bg.g + 18), Math.min(255, bg.b + 18));
-        const dc2 = Phaser.Display.Color.GetColor(
-            Math.min(255, bg.r + 6), Math.min(255, bg.g + 6), Math.min(255, bg.b + 6));
-
-        for (let i = 0; i < 20; i++) {
-            const dx = Phaser.Math.Between(WALL + 8, W - WALL - 8);
-            const dy = Phaser.Math.Between(WALL + 8, H - WALL - 8);
-            const r = Math.random();
-            if (r < 0.4) {
-                g.fillStyle(dc, 0.15);
-                g.fillRect(dx, dy, Phaser.Math.Between(2, 6), Phaser.Math.Between(1, 3));
-            } else if (r < 0.7) {
-                g.fillStyle(dc2, 0.12);
-                g.fillCircle(dx, dy, Phaser.Math.Between(1, 3));
-            } else {
-                g.lineStyle(1, dc, 0.1);
-                g.lineBetween(dx, dy, dx + Phaser.Math.Between(-8, 8), dy + Phaser.Math.Between(-4, 4));
+        const theme = storyState.theme;
+        if (theme === 'cyberpunk') {
+            g.lineStyle(1, lineC, 0.1);
+            for (let x = WALL; x < W - WALL; x += 32) g.lineBetween(x, WALL, x, H - WALL);
+            for (let y = WALL; y < H - WALL; y += 32) g.lineBetween(WALL, y, W - WALL, y);
+            // Neon floor strips
+            g.lineStyle(2, 0x00ffff, 0.04);
+            for (let i = 0; i < 3; i++) {
+                const y = WALL + 60 + i * 120;
+                g.lineBetween(WALL, y, W - WALL, y);
+            }
+        } else if (theme === 'medieval') {
+            // Irregular stone
+            for (let x = WALL; x < W - WALL; x += Phaser.Math.Between(28, 40)) {
+                for (let y = WALL; y < H - WALL; y += Phaser.Math.Between(24, 36)) {
+                    const sw = Phaser.Math.Between(24, 36), sh = Phaser.Math.Between(20, 32);
+                    g.lineStyle(1, lineC, 0.08);
+                    g.strokeRect(x, y, sw, sh);
+                }
+            }
+        } else {
+            // Metal grating
+            g.lineStyle(1, lineC, 0.12);
+            for (let x = WALL; x < W - WALL; x += 24) g.lineBetween(x, WALL, x, H - WALL);
+            for (let y = WALL; y < H - WALL; y += 24) g.lineBetween(WALL, y, W - WALL, y);
+            // Under-glow
+            g.fillStyle(0x4488ff, 0.02);
+            for (let x = WALL + 12; x < W - WALL; x += 48) {
+                for (let y = WALL + 12; y < H - WALL; y += 48) g.fillRect(x - 4, y - 4, 8, 8);
             }
         }
 
-        // Corner darkening
-        const cornerAlpha = 0.15;
-        g.fillStyle(0x000000, cornerAlpha);
-        g.fillRect(WALL, WALL, 40, 40);
-        g.fillRect(W - WALL - 40, WALL, 40, 40);
-        g.fillRect(WALL, H - WALL - 40, 40, 40);
-        g.fillRect(W - WALL - 40, H - WALL - 40, 40, 40);
+        // Random floor scratches/details
+        for (let i = 0; i < 15; i++) {
+            const dx = Phaser.Math.Between(WALL + 8, W - WALL - 8);
+            const dy = Phaser.Math.Between(WALL + 8, H - WALL - 8);
+            g.fillStyle(detC, Phaser.Math.FloatBetween(0.06, 0.15));
+            g.fillRect(dx, dy, Phaser.Math.Between(1, 5), Phaser.Math.Between(1, 3));
+        }
     }
 
-    addAmbientEffects(spec) {
+    addDecorations(spec) {
+        const W = this.scale.width, H = this.scale.height;
+        const g = this.add.graphics().setDepth(1);
+        const theme = storyState.theme;
+
+        for (const d of (spec.decorations || [])) {
+            const p = this.norm(d.x, d.y);
+            const c = Phaser.Display.Color.HexStringToColor(d.color || '#444466').color;
+
+            switch (d.type) {
+                case 'neon_sign': case 'graffiti':
+                    if (d.text) {
+                        this.add.text(p.x, p.y, d.text, {
+                            fontFamily: '"Press Start 2P"', fontSize: '6px', color: d.color || '#ff00ff',
+                            shadow: { offsetX: 0, offsetY: 0, color: d.color || '#ff00ff', blur: 8, fill: true }
+                        }).setOrigin(0.5).setDepth(2);
+                    }
+                    this.add.ellipse(p.x, p.y, 40, 20, c, 0.06).setDepth(0);
+                    break;
+                case 'torch_bracket': case 'lantern': case 'warning_light':
+                    g.fillStyle(c, 0.3); g.fillRect(p.x - 2, p.y - 4, 4, 8);
+                    const lGlow = this.add.ellipse(p.x, p.y, 50, 50, c, 0.06).setDepth(0);
+                    this.tweens.add({ targets: lGlow, alpha: 0.12, duration: 600 + Math.random() * 400, yoyo: true, repeat: -1 });
+                    break;
+                case 'pipe': case 'cable_run':
+                    g.lineStyle(2, c, 0.25);
+                    g.lineBetween(p.x, p.y, p.x + Phaser.Math.Between(30, 80), p.y + Phaser.Math.Between(-10, 10));
+                    break;
+                case 'puddle':
+                    this.add.ellipse(p.x, p.y, 24, 10, c, 0.1).setDepth(0);
+                    break;
+                case 'vent': case 'steam_vent':
+                    g.fillStyle(0x222222, 0.3); g.fillRect(p.x - 8, p.y - 4, 16, 8);
+                    for (let i = 0; i < 3; i++) {
+                        const prt = this.add.rectangle(p.x + Phaser.Math.Between(-4, 4), p.y, 1, 2, 0xffffff, 0).setDepth(1);
+                        this.tweens.add({
+                            targets: prt, y: p.y - 20, alpha: { from: 0, to: 0.2 }, duration: 1500,
+                            yoyo: false, repeat: -1, delay: i * 500
+                        });
+                    }
+                    break;
+                case 'barrel': case 'crate_stack':
+                    g.fillStyle(c, 0.2); g.fillRect(p.x - 6, p.y - 6, 12, 12);
+                    g.lineStyle(1, c, 0.3); g.strokeRect(p.x - 6, p.y - 6, 12, 12);
+                    break;
+                case 'console': case 'screen': case 'terminal':
+                    g.fillStyle(0x111122, 0.5); g.fillRect(p.x - 8, p.y - 6, 16, 12);
+                    const sc = this.add.rectangle(p.x, p.y, 12, 8, c, 0.2).setDepth(1);
+                    this.tweens.add({ targets: sc, alpha: 0.35, duration: 800, yoyo: true, repeat: -1 });
+                    break;
+                case 'viewport':
+                    g.fillStyle(0x000022, 0.4); g.fillRect(p.x - 12, p.y - 8, 24, 16);
+                    g.fillStyle(0xffffff, 0.03);
+                    for (let s = 0; s < 5; s++) g.fillRect(p.x - 10 + Math.random() * 18, p.y - 6 + Math.random() * 10, 1, 1);
+                    break;
+                case 'banner': case 'cobweb': case 'chain':
+                    g.lineStyle(1, c, 0.2);
+                    for (let i = 0; i < 3; i++) g.lineBetween(p.x, p.y, p.x + Phaser.Math.Between(-10, 10), p.y + Phaser.Math.Between(8, 20));
+                    break;
+                case 'skull': case 'moss': case 'crack': case 'sparking_wire':
+                    g.fillStyle(c, 0.15); g.fillCircle(p.x, p.y, 4);
+                    if (d.type === 'sparking_wire') {
+                        const spark = this.add.rectangle(p.x, p.y, 2, 2, 0xffff44, 0).setDepth(2);
+                        this.tweens.add({ targets: spark, alpha: 0.8, duration: 100, yoyo: true, repeat: -1, repeatDelay: Phaser.Math.Between(500, 2000) });
+                    }
+                    break;
+                default:
+                    g.fillStyle(c, 0.1); g.fillRect(p.x - 4, p.y - 4, 8, 8);
+            }
+        }
+    }
+
+    addAmbientParticles(spec) {
         const W = this.scale.width, H = this.scale.height;
         const theme = storyState.theme || 'cyberpunk';
         const pConf = THEME_PARTICLES[theme] || THEME_PARTICLES.cyberpunk;
 
-        // Floating ambient particles
-        for (let i = 0; i < 18; i++) {
+        for (let i = 0; i < 15; i++) {
             const pc = Phaser.Utils.Array.GetRandom(pConf.colors);
-            const x = Phaser.Math.Between(WALL + 10, W - WALL - 10);
-            const y = Phaser.Math.Between(WALL + 10, H - WALL - 10);
-            const size = pConf.style === 'stars' ? Phaser.Math.Between(1, 3) : Phaser.Math.Between(2, 4);
+            const x = Phaser.Math.Between(WALL, W - WALL);
+            const y = Phaser.Math.Between(WALL, H - WALL);
+            const size = Phaser.Math.Between(1, 3);
             const p = this.add.rectangle(x, y, size, size, pc, 0).setDepth(1);
-
             this.tweens.add({
-                targets: p,
-                alpha: { from: 0, to: Phaser.Math.FloatBetween(0.2, 0.6) },
-                x: x + Phaser.Math.Between(-30, 30),
-                y: y + Phaser.Math.Between(-20, 20),
-                duration: Phaser.Math.Between(3000, 7000),
-                yoyo: true, repeat: -1,
-                ease: 'Sine.easeInOut',
-                delay: Phaser.Math.Between(0, 2000)
+                targets: p, alpha: { from: 0, to: Phaser.Math.FloatBetween(0.15, 0.5) },
+                x: x + Phaser.Math.Between(-25, 25), y: y + Phaser.Math.Between(-20, 20),
+                duration: Phaser.Math.Between(3000, 7000), yoyo: true, repeat: -1,
+                ease: 'Sine.easeInOut', delay: Phaser.Math.Between(0, 2000)
             });
         }
 
-        // Mood-based ambient overlay
+        // Mood overlay
         const mood = spec.mood || 'mysterious';
         if (mood === 'eerie' || mood === 'dangerous') {
             const fog = this.add.rectangle(W / 2, H / 2, W, H, 0x220022, 0.06).setDepth(15);
-            this.tweens.add({
-                targets: fog, alpha: 0.12, duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-            });
+            this.tweens.add({ targets: fog, alpha: 0.12, duration: 2000, yoyo: true, repeat: -1 });
         } else if (mood === 'tense') {
             const tint = this.add.rectangle(W / 2, H / 2, W, H, 0x331100, 0.04).setDepth(15);
-            this.tweens.add({
-                targets: tint, alpha: 0.08, duration: 3000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-            });
+            this.tweens.add({ targets: tint, alpha: 0.08, duration: 3000, yoyo: true, repeat: -1 });
         }
     }
 
     addVignette() {
         const W = this.scale.width, H = this.scale.height;
         const g = this.add.graphics().setDepth(45);
-        const edgeW = 80;
-
-        // Gradient edges using layered alpha rectangles
         for (let i = 0; i < 8; i++) {
-            const a = 0.12 - i * 0.014;
+            const a = 0.10 - i * 0.012;
             if (a <= 0) break;
-            const offset = i * (edgeW / 8);
+            const s = i * 10;
             g.fillStyle(0x000000, a);
-            // Top
-            g.fillRect(0, 0, W, offset + edgeW / 8);
-            // Bottom
-            g.fillRect(0, H - offset - edgeW / 8, W, offset + edgeW / 8);
-            // Left
-            g.fillRect(0, 0, offset + edgeW / 8, H);
-            // Right
-            g.fillRect(W - offset - edgeW / 8, 0, offset + edgeW / 8, H);
+            g.fillRect(0, 0, W, s + 10);
+            g.fillRect(0, H - s - 10, W, s + 10);
+            g.fillRect(0, 0, s + 10, H);
+            g.fillRect(W - s - 10, 0, s + 10, H);
         }
     }
 
+    // === GAME OBJECTS ===
     buildObstacles(obs) {
         for (const o of obs) {
             const p = this.norm(o.x, o.y);
@@ -309,9 +390,7 @@ export default class GameScene extends Phaser.Scene {
             const s = this.add.tileSprite(p.x, p.y, w, h, key).setTint(c).setDepth(2);
             this.physics.add.existing(s, true);
             this.obstacleGroup.add(s);
-
-            // Obstacle shadow
-            this.add.ellipse(p.x, p.y + h / 2 + 2, w * 0.8, 5, 0x000000, 0.2).setDepth(1);
+            this.add.ellipse(p.x, p.y + h / 2 + 2, w * 0.7, 4, 0x000000, 0.2).setDepth(1);
         }
     }
 
@@ -319,24 +398,15 @@ export default class GameScene extends Phaser.Scene {
         for (const n of npcs) {
             const p = this.norm(n.x, n.y);
             const c = Phaser.Display.Color.HexStringToColor(n.color || '#aaaaff').color;
-            const ac = Phaser.Display.Color.HexStringToColor(n.accent_color || '#ffffff').color;
             const spriteType = n.sprite_type || 'civilian';
             const key = this.textures.exists(`npc_${spriteType}`) ? `npc_${spriteType}` : 'npc_civilian';
 
-            // NPC glow
-            const glow = this.add.ellipse(p.x, p.y + 4, 36, 18, c, 0.08).setDepth(3);
-            this.tweens.add({
-                targets: glow, alpha: 0.18, scaleX: 1.15, scaleY: 1.15,
-                duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-            });
-
-            // NPC shadow
+            this.add.ellipse(p.x, p.y + 4, 36, 18, c, 0.08).setDepth(3);
             this.add.ellipse(p.x, p.y + 16, 18, 6, 0x000000, 0.3).setDepth(4);
 
             const sprite = this.physics.add.staticSprite(p.x, p.y, key).setTint(c).setDepth(5);
             this.npcGroup.add(sprite);
 
-            // Name label with colored background
             const nameStr = n.name || n.id;
             const nameW = nameStr.length * 6 + 8;
             const nameBg = this.add.rectangle(p.x, p.y - 24, nameW, 12, 0x000000, 0.7)
@@ -345,33 +415,29 @@ export default class GameScene extends Phaser.Scene {
                 fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#ffffff'
             }).setOrigin(0.5).setDepth(7);
 
-            // Emotion indicator
-            const emotions = { friendly: '☺', hostile: '⚠', scared: '!', mysterious: '?', sad: '~', neutral: '' };
-            const emo = emotions[n.emotion] || '';
-            let emoText = null;
-            if (emo) {
-                emoText = this.add.text(p.x + 14, p.y - 16, emo, {
-                    fontFamily: '"Press Start 2P"', fontSize: '7px',
-                    color: n.emotion === 'hostile' ? '#ff4444' : n.emotion === 'friendly' ? '#44ff44' : '#ffff44'
-                }).setOrigin(0.5).setDepth(7);
-            }
+            // Emotion + shop/quest indicators
+            const indicators = [];
+            if (n.has_quest) indicators.push({ t: '!', c: '#ffff00' });
+            if (n.shop_inventory) indicators.push({ t: '$', c: '#44ff44' });
+            const emotions = { friendly: '☺', hostile: '⚠', scared: '!', mysterious: '?', sad: '~' };
+            const emo = emotions[n.emotion];
+            if (emo && !n.has_quest) indicators.push({ t: emo, c: n.emotion === 'hostile' ? '#ff4444' : '#ffff44' });
 
-            // Idle float
-            const floatTargets = [sprite, label, nameBg, glow];
-            if (emoText) floatTargets.push(emoText);
+            const indObjs = [];
+            indicators.forEach((ind, idx) => {
+                const io = this.add.text(p.x + (idx - indicators.length / 2) * 12, p.y - 36, ind.t, {
+                    fontFamily: '"Press Start 2P"', fontSize: '10px', color: ind.c,
+                    shadow: { offsetX: 0, offsetY: 0, color: ind.c, blur: 8, fill: true }
+                }).setOrigin(0.5).setDepth(8);
+                indObjs.push(io);
+                this.tweens.add({ targets: io, y: io.y - 4, duration: 500, yoyo: true, repeat: -1 });
+            });
+
+            const floatTargets = [sprite, label, nameBg, ...indObjs];
             this.tweens.add({
                 targets: floatTargets, y: `-=3`, duration: 1200 + Math.random() * 500,
                 yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
             });
-
-            // Quest indicator
-            if (n.has_quest) {
-                const qi = this.add.text(p.x, p.y - 38, '!', {
-                    fontFamily: '"Press Start 2P"', fontSize: '12px', color: '#ffff00',
-                    shadow: { offsetX: 0, offsetY: 0, color: '#ffff00', blur: 10, fill: true }
-                }).setOrigin(0.5).setDepth(8);
-                this.tweens.add({ targets: qi, y: p.y - 44, duration: 400, yoyo: true, repeat: -1 });
-            }
 
             this.npcDataMap[n.id] = { data: n, sprite, label, type: 'npc' };
         }
@@ -383,28 +449,19 @@ export default class GameScene extends Phaser.Scene {
             const p = this.norm(e.x, e.y);
             const c = Phaser.Display.Color.HexStringToColor(e.color || '#ff4444').color;
 
-            // Enemy aura
             const aura = this.add.ellipse(p.x, p.y + 4, 44, 22, 0xff0000, 0.06).setDepth(3);
-            this.tweens.add({
-                targets: aura, alpha: 0.15, scaleX: 1.3, scaleY: 1.3,
-                duration: 800, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-            });
+            this.tweens.add({ targets: aura, alpha: 0.15, scaleX: 1.3, scaleY: 1.3, duration: 800, yoyo: true, repeat: -1 });
 
             const sprite = this.physics.add.staticSprite(p.x, p.y, 'enemy').setTint(c).setDepth(5).setScale(0.8);
             this.enemyGroup.add(sprite);
 
             const nameW = (e.name?.length || 5) * 6 + 8;
-            this.add.rectangle(p.x, p.y - 26, nameW, 12, 0x000000, 0.7)
-                .setDepth(6).setStrokeStyle(1, 0xff4444, 0.5);
+            this.add.rectangle(p.x, p.y - 26, nameW, 12, 0x000000, 0.7).setDepth(6).setStrokeStyle(1, 0xff4444, 0.5);
             const label = this.add.text(p.x, p.y - 26, e.name, {
                 fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#ff6666'
             }).setOrigin(0.5).setDepth(7);
 
-            this.tweens.add({
-                targets: sprite, scaleX: 0.85, scaleY: 0.85, duration: 600,
-                yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-            });
-
+            this.tweens.add({ targets: sprite, scaleX: 0.85, scaleY: 0.85, duration: 600, yoyo: true, repeat: -1 });
             this.enemyDataMap[e.id] = { data: e, sprite, label, type: 'enemy' };
         }
     }
@@ -413,37 +470,15 @@ export default class GameScene extends Phaser.Scene {
         for (const item of items) {
             const p = this.norm(item.x, item.y);
             const c = Phaser.Display.Color.HexStringToColor(item.color || '#ffdd44').color;
-
-            // Item glow
-            const glow = this.add.ellipse(p.x, p.y + 2, 24, 14, c, 0.1).setDepth(2);
-            this.tweens.add({
-                targets: glow, alpha: 0.25, scaleX: 1.3, scaleY: 1.3,
-                duration: 900, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-            });
-
-            // Sparkle particles around item
+            this.add.ellipse(p.x, p.y + 2, 24, 14, c, 0.1).setDepth(2);
             for (let s = 0; s < 3; s++) {
-                const spark = this.add.rectangle(
-                    p.x + Phaser.Math.Between(-10, 10),
-                    p.y + Phaser.Math.Between(-10, 10),
-                    2, 2, c, 0
-                ).setDepth(3);
-                this.tweens.add({
-                    targets: spark, alpha: { from: 0, to: 0.7 },
-                    x: spark.x + Phaser.Math.Between(-6, 6),
-                    y: spark.y + Phaser.Math.Between(-8, -2),
-                    duration: Phaser.Math.Between(800, 1400),
-                    yoyo: true, repeat: -1, delay: s * 300, ease: 'Sine.easeInOut'
-                });
+                const spark = this.add.rectangle(p.x + Phaser.Math.Between(-8, 8), p.y + Phaser.Math.Between(-8, 8), 2, 2, c, 0).setDepth(3);
+                this.tweens.add({ targets: spark, alpha: { from: 0, to: 0.6 }, y: spark.y - 6, duration: Phaser.Math.Between(800, 1400), yoyo: true, repeat: -1, delay: s * 300 });
             }
-
             const sp = this.physics.add.sprite(p.x, p.y, 'item').setTint(c).setDepth(4);
             sp.setData('itemData', item);
             this.itemGroup.add(sp);
-            this.tweens.add({
-                targets: sp, y: p.y - 5, scaleX: 1.15, scaleY: 1.15,
-                duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-            });
+            this.tweens.add({ targets: sp, y: p.y - 5, scaleX: 1.15, scaleY: 1.15, duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         }
     }
 
@@ -451,16 +486,9 @@ export default class GameScene extends Phaser.Scene {
         for (const obj of interactables) {
             const p = this.norm(obj.x, obj.y);
             const c = Phaser.Display.Color.HexStringToColor(obj.color || '#888888').color;
-
-            // Glow for interactable
-            const glow = this.add.ellipse(p.x, p.y + 2, 32, 16, c, 0.08).setDepth(2);
-            this.tweens.add({
-                targets: glow, alpha: 0.15, duration: 1400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-            });
-
+            this.add.ellipse(p.x, p.y + 2, 32, 16, c, 0.08).setDepth(2);
             const s = this.physics.add.staticSprite(p.x, p.y, 'interactable').setTint(c).setDepth(3);
             this.interactGroup.add(s);
-
             if (obj.locked) {
                 const lock = this.add.text(p.x, p.y - 18, '🔒', { fontSize: '12px' }).setOrigin(0.5).setDepth(4);
                 this.npcDataMap[`inter_${obj.id}`] = { data: obj, sprite: s, label: lock, type: 'interactable', lockIcon: lock };
@@ -474,34 +502,19 @@ export default class GameScene extends Phaser.Scene {
         for (const exit of exits) {
             const pos = this.getExitPos(exit);
             const c = Phaser.Display.Color.HexStringToColor(exit.color || '#4488ff').color;
-
-            // Multi-layered exit glow
-            const glow1 = this.add.image(pos.x, pos.y, 'door_glow').setTint(c).setAlpha(0.15).setDepth(1).setScale(2);
-            const glow2 = this.add.image(pos.x, pos.y, 'door_glow').setTint(c).setAlpha(0.3).setDepth(1).setScale(1.2);
-            this.tweens.add({
-                targets: glow1, alpha: 0.35, scaleX: 2.4, scaleY: 2.4,
-                duration: 1500, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-            });
-            this.tweens.add({
-                targets: glow2, alpha: 0.6, scaleX: 1.5, scaleY: 1.5,
-                duration: 1100, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
-            });
+            const g1 = this.add.image(pos.x, pos.y, 'door_glow').setTint(c).setAlpha(0.15).setDepth(1).setScale(2);
+            const g2 = this.add.image(pos.x, pos.y, 'door_glow').setTint(c).setAlpha(0.3).setDepth(1).setScale(1.2);
+            this.tweens.add({ targets: g1, alpha: 0.35, scaleX: 2.4, scaleY: 2.4, duration: 1500, yoyo: true, repeat: -1 });
+            this.tweens.add({ targets: g2, alpha: 0.6, scaleX: 1.5, scaleY: 1.5, duration: 1100, yoyo: true, repeat: -1 });
 
             if (exit.label) {
                 const lbl = exit.label;
-                const lblW = lbl.length * 6 + 10;
-                this.add.rectangle(pos.x, pos.y - 30, lblW, 14, 0x000000, 0.6)
-                    .setDepth(6).setStrokeStyle(1, c, 0.3);
-                this.add.text(pos.x, pos.y - 30, lbl, {
-                    fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#ffffff'
-                }).setOrigin(0.5).setDepth(7);
+                this.add.rectangle(pos.x, pos.y - 30, lbl.length * 6 + 10, 14, 0x000000, 0.6).setDepth(6).setStrokeStyle(1, c, 0.3);
+                this.add.text(pos.x, pos.y - 30, lbl, { fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#ffffff' }).setOrigin(0.5).setDepth(7);
             }
-
             if (!exit.blocked) {
-                let zw, zh;
-                if (exit.direction === 'top' || exit.direction === 'bottom') { zw = DOOR_GAP; zh = WALL + 6; }
-                else { zw = WALL + 6; zh = DOOR_GAP; }
-                const zone = this.add.rectangle(pos.x, pos.y, zw, zh, 0x000000, 0);
+                const isV = exit.direction === 'top' || exit.direction === 'bottom';
+                const zone = this.add.rectangle(pos.x, pos.y, isV ? DOOR_GAP : WALL + 6, isV ? WALL + 6 : DOOR_GAP, 0x000000, 0);
                 this.physics.add.existing(zone, true);
                 zone.setData('exitData', exit);
                 this.exitZones.add(zone);
@@ -510,8 +523,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     getExitPos(exit) {
-        const W = this.scale.width, H = this.scale.height;
-        const p = exit.position || 0.5;
+        const W = this.scale.width, H = this.scale.height, p = exit.position || 0.5;
         switch (exit.direction) {
             case 'left': return { x: WALL / 2, y: WALL + p * this.playH };
             case 'right': return { x: W - WALL / 2, y: WALL + p * this.playH };
@@ -532,43 +544,27 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // === HUD ===
-
     buildHUD() {
-        const H = this.scale.height, W = this.scale.width;
+        const W = this.scale.width;
         this.hud = {};
-
-        // Room name with background
         const roomName = this.roomSpec.name || '';
-        const rnW = Math.max(60, roomName.length * 7 + 16);
-        this.hud.roomNameBg = this.add.rectangle(W / 2, 6, rnW, 14, 0x000000, 0.5)
-            .setOrigin(0.5, 0).setDepth(30);
-        this.hud.roomName = this.add.text(W / 2, 8, roomName, {
-            fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#888888'
-        }).setOrigin(0.5, 0).setDepth(31);
+        this.hud.roomNameBg = this.add.rectangle(W / 2, 6, Math.max(60, roomName.length * 7 + 16), 14, 0x000000, 0.5).setOrigin(0.5, 0).setDepth(30);
+        this.hud.roomName = this.add.text(W / 2, 8, roomName, { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#888888' }).setOrigin(0.5, 0).setDepth(31);
 
-        // HP section
         this.hud.hpIcon = this.add.image(WALL + 8, WALL + 10, 'hp_heart').setScale(0.9).setDepth(31);
-        this.hud.hpBarBg = this.add.rectangle(WALL + 20, WALL + 7, 80, 8, 0x333333).setOrigin(0, 0).setDepth(30);
+        this.add.rectangle(WALL + 60, WALL + 7, 82, 10, 0x333333).setOrigin(0.5, 0).setDepth(30);
         this.hud.hpBar = this.add.rectangle(WALL + 20, WALL + 7, 80, 8, 0xffff00).setOrigin(0, 0).setDepth(30);
-        this.hud.hpText = this.add.text(WALL + 104, WALL + 5, '', {
-            fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#ffffff'
-        }).setDepth(31);
+        this.hud.hpText = this.add.text(WALL + 104, WALL + 4, '', { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#ffffff' }).setDepth(31);
 
-        // Gold/credits
-        this.hud.gold = this.add.text(W - WALL - 4, WALL + 5, '', {
-            fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#ffd700', align: 'right'
-        }).setOrigin(1, 0).setDepth(31);
+        this.hud.gold = this.add.text(W - WALL - 4, WALL + 4, '', { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#ffd700', align: 'right' }).setOrigin(1, 0).setDepth(31);
+        this.hud.lvl = this.add.text(W - WALL - 4, WALL + 15, '', { fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#ffff00', align: 'right' }).setOrigin(1, 0).setDepth(31);
 
-        // Chapter indicator
-        this.hud.chapter = this.add.text(W - WALL - 4, WALL + 16, `CH ${storyState.chapter}`, {
-            fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#444444', align: 'right'
-        }).setOrigin(1, 0).setDepth(31);
+        this.hud.questHint = this.add.text(WALL + 4, WALL + 20, '', { fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#44aaff' }).setDepth(31);
 
-        // Interaction prompt (floating near player)
-        this.promptText = this.add.text(W / 2, H - WALL - 16, '', {
+        this.promptText = this.add.text(0, 0, '', {
             fontFamily: '"Press Start 2P"', fontSize: '9px', color: '#ffff00',
             shadow: { offsetX: 0, offsetY: 0, color: '#ffff00', blur: 8, fill: true },
-            backgroundColor: '#00000088', padding: { x: 6, y: 3 }
+            backgroundColor: '#00000099', padding: { x: 6, y: 3 }
         }).setOrigin(0.5).setDepth(30).setVisible(false);
 
         this.updateHUD();
@@ -577,481 +573,406 @@ export default class GameScene extends Phaser.Scene {
     updateHUD() {
         const ratio = storyState.hp / storyState.maxHp;
         this.hud.hpBar.setSize(80 * ratio, 8);
-        const hpColor = ratio > 0.5 ? 0x44ff44 : ratio > 0.25 ? 0xffff00 : 0xff4444;
-        this.hud.hpBar.setFillStyle(hpColor);
+        this.hud.hpBar.setFillStyle(ratio > 0.5 ? 0x44ff44 : ratio > 0.25 ? 0xffff00 : 0xff4444);
         this.hud.hpText.setText(`${storyState.hp}/${storyState.maxHp}`);
 
         const curr = storyState.theme === 'medieval' ? 'G' : 'CR';
         this.hud.gold.setText(storyState.gold > 0 ? `${storyState.gold} ${curr}` : '');
+        this.hud.lvl.setText(`LV${storyState.level} | XP${storyState.xp}/${storyState.xpToNext}`);
 
-        if (storyState.inventory.length > 0) {
-            this.hud.chapter.setText(`CH${storyState.chapter} | ${storyState.inventory.length} items`);
-        }
+        const aq = storyState.activeQuests[0];
+        this.hud.questHint.setText(aq ? `◆ ${aq.title}` : '[X] Journal');
     }
 
     // === INTERACTION ===
-
     checkProximity() {
         const threshold = 50;
         let closest = null, closestDist = Infinity;
-
-        const checkTarget = (id, entry) => {
+        const check = (id, entry) => {
             if (!entry.sprite?.active) return;
             const d = Phaser.Math.Distance.Between(this.player.x, this.player.y, entry.sprite.x, entry.sprite.y);
             if (d < threshold && d < closestDist) { closest = { id, ...entry }; closestDist = d; }
         };
-
-        for (const [id, entry] of Object.entries(this.npcDataMap)) checkTarget(id, entry);
-        for (const [id, entry] of Object.entries(this.enemyDataMap)) checkTarget(id, entry);
-
+        for (const [id, e] of Object.entries(this.npcDataMap)) check(id, e);
+        for (const [id, e] of Object.entries(this.enemyDataMap)) check(id, e);
         this.nearTarget = closest;
         if (closest) {
-            let label;
-            if (closest.type === 'enemy') label = '⚔ FIGHT [Z]';
-            else if (closest.type === 'interactable') label = '▶ USE [Z]';
-            else label = '💬 TALK [Z]';
-            this.promptText.setText(label).setVisible(true);
-            this.promptText.setPosition(this.player.x, this.player.y - 28);
+            let label = closest.type === 'enemy' ? '⚔ FIGHT [Z]' : closest.type === 'interactable' ? '▶ USE [Z]' : '💬 TALK [Z]';
+            this.promptText.setText(label).setVisible(true).setPosition(this.player.x, this.player.y - 28);
         } else {
             this.promptText.setVisible(false);
         }
     }
 
     interact(target) {
-        if (target.type === 'npc') {
-            this.startNPCDialogue(target.data);
-        } else if (target.type === 'enemy') {
-            this.startCombat(target.data);
-        } else if (target.type === 'interactable') {
-            this.interactWithObject(target.data);
-        }
+        if (target.type === 'npc') this.startNPCDialogue(target.data);
+        else if (target.type === 'enemy') this.startCombat(target.data);
+        else if (target.type === 'interactable') this.interactWithObject(target.data);
     }
 
-    // === DIALOGUE SYSTEM ===
-
+    // === DIALOGUE ===
     initDialogue() {
         const W = this.scale.width, H = this.scale.height;
         const boxH = 130, boxY = H - boxH - 6, boxW = W - 24;
         this.dlgBoxY = boxY;
-
         this.dlg = {};
-
-        // Outer border glow
-        this.dlg.bgGlow = this.add.rectangle(W / 2, boxY + boxH / 2, boxW + 6, boxH + 6, 0xffffff, 0.05)
-            .setDepth(49).setVisible(false);
-
-        // Main box
-        this.dlg.bg = this.add.rectangle(W / 2, boxY + boxH / 2, boxW, boxH, 0x000000)
-            .setStrokeStyle(3, 0xffffff).setDepth(50).setVisible(false);
-
-        // Name plate with background
-        this.dlg.nameBg = this.add.rectangle(20, boxY - 1, 10, 16, 0x000000)
-            .setOrigin(0, 0.5).setStrokeStyle(2, 0xffffff).setDepth(50).setVisible(false);
-        this.dlg.nameText = this.add.text(26, boxY - 1, '', {
-            fontFamily: '"Press Start 2P"', fontSize: '9px', color: '#ffff00'
-        }).setOrigin(0, 0.5).setDepth(51).setVisible(false);
-
-        // Dialogue text (asterisk prefix like Undertale)
-        this.dlg.text = this.add.text(22, boxY + 18, '', {
-            fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffffff',
-            wordWrap: { width: boxW - 40 }, lineSpacing: 6
-        }).setDepth(51).setVisible(false);
-
-        // Continue prompt
-        this.dlg.arrow = this.add.text(W - 36, boxY + boxH - 20, '▼ Z', {
-            fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffff00'
-        }).setDepth(51).setVisible(false);
-
-        // Choice UI
+        this.dlg.bgGlow = this.add.rectangle(W / 2, boxY + boxH / 2, boxW + 6, boxH + 6, 0xffffff, 0.05).setDepth(49).setVisible(false);
+        this.dlg.bg = this.add.rectangle(W / 2, boxY + boxH / 2, boxW, boxH, 0x000000).setStrokeStyle(3, 0xffffff).setDepth(50).setVisible(false);
+        this.dlg.nameBg = this.add.rectangle(20, boxY - 1, 10, 16, 0x000000).setOrigin(0, 0.5).setStrokeStyle(2, 0xffffff).setDepth(50).setVisible(false);
+        this.dlg.nameText = this.add.text(26, boxY - 1, '', { fontFamily: '"Press Start 2P"', fontSize: '9px', color: '#ffff00' }).setOrigin(0, 0.5).setDepth(51).setVisible(false);
+        this.dlg.text = this.add.text(22, boxY + 18, '', { fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffffff', wordWrap: { width: boxW - 40 }, lineSpacing: 6 }).setDepth(51).setVisible(false);
+        this.dlg.arrow = this.add.text(W - 36, boxY + boxH - 20, '▼ Z', { fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffff00' }).setDepth(51).setVisible(false);
         this.dlg.choiceTexts = [];
-        for (let i = 0; i < 4; i++) {
-            this.dlg.choiceTexts.push(this.add.text(50, boxY + 20 + i * 22, '', {
-                fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffffff'
-            }).setDepth(51).setVisible(false));
+        for (let i = 0; i < 6; i++) {
+            this.dlg.choiceTexts.push(this.add.text(50, boxY + 18 + i * 18, '', { fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffffff' }).setDepth(51).setVisible(false));
         }
-        this.dlg.choiceCursor = this.add.image(30, boxY + 24, 'soul').setScale(0.5)
-            .setDepth(51).setVisible(false);
-
-        this.dlgState = {
-            lines: [], lineIdx: 0, choices: [], choiceIdx: 0,
-            showingChoices: false, typing: false, displayedText: '',
-            fullText: '', charTimer: null, npcName: '', onChoiceSelect: null, onEnd: null
-        };
+        this.dlg.choiceCursor = this.add.image(30, boxY + 24, 'soul').setScale(0.5).setDepth(51).setVisible(false);
+        this.dlgState = { lines: [], lineIdx: 0, choices: [], choiceIdx: 0, showingChoices: false, typing: false, displayedText: '', fullText: '', charTimer: null, npcName: '', onChoiceSelect: null, onEnd: null };
     }
 
     showDialogue(npcName, lines, choices, onChoiceSelect, onEnd) {
         this.mode = 'dialogue';
         this.player.setVelocity(0);
-
         const s = this.dlgState;
-        s.lines = lines || [];
-        s.lineIdx = 0;
-        s.choices = choices || [];
-        s.choiceIdx = 0;
-        s.showingChoices = false;
-        s.npcName = npcName;
-        s.onChoiceSelect = onChoiceSelect;
-        s.onEnd = onEnd;
-
-        this.dlg.bg.setVisible(true);
-        this.dlg.bgGlow.setVisible(true);
-        this.dlg.arrow.setVisible(false);
-        this.dlg.choiceCursor.setVisible(false);
+        s.lines = lines || []; s.lineIdx = 0; s.choices = choices || []; s.choiceIdx = 0;
+        s.showingChoices = false; s.npcName = npcName; s.onChoiceSelect = onChoiceSelect; s.onEnd = onEnd;
+        this.dlg.bg.setVisible(true); this.dlg.bgGlow.setVisible(true);
+        this.dlg.arrow.setVisible(false); this.dlg.choiceCursor.setVisible(false);
         this.dlg.choiceTexts.forEach(t => t.setVisible(false).setText(''));
-
-        // Name plate
         if (npcName) {
-            const nw = npcName.length * 9 + 16;
-            this.dlg.nameBg.setSize(nw, 16).setVisible(true);
+            this.dlg.nameBg.setSize(npcName.length * 9 + 16, 16).setVisible(true);
             this.dlg.nameText.setText(npcName).setVisible(true);
-        } else {
-            this.dlg.nameBg.setVisible(false);
-            this.dlg.nameText.setVisible(false);
-        }
-
-        if (s.lines.length > 0) {
-            this.typeText(s.lines[0]);
-        } else if (s.choices.length > 0) {
-            this.showChoices();
-        }
+        } else { this.dlg.nameBg.setVisible(false); this.dlg.nameText.setVisible(false); }
+        if (s.lines.length > 0) this.typeText(s.lines[0]);
+        else if (s.choices.length > 0) this.showChoices();
     }
 
     typeText(text) {
-        const s = this.dlgState;
-        s.typing = true;
-        // Undertale-style asterisk prefix for narration
+        const s = this.dlgState; s.typing = true;
         const prefix = s.npcName ? '' : '* ';
-        s.fullText = prefix + text;
-        s.displayedText = '';
-        this.dlg.text.setText('').setVisible(true);
-        this.dlg.arrow.setVisible(false);
-
+        s.fullText = prefix + text; s.displayedText = '';
+        this.dlg.text.setText('').setVisible(true); this.dlg.arrow.setVisible(false);
         let ci = 0;
         if (s.charTimer) s.charTimer.destroy();
-        s.charTimer = this.time.addEvent({
-            delay: 25, loop: true,
-            callback: () => {
-                if (ci < s.fullText.length) {
-                    s.displayedText += s.fullText[ci];
-                    this.dlg.text.setText(s.displayedText);
-                    ci++;
-                    // Typing sound every few chars
-                    if (ci % 3 === 0) this.playSound('type');
-                } else {
-                    s.charTimer.destroy();
-                    s.typing = false;
-                    this.dlg.arrow.setVisible(true);
-                    this.tweens.killTweensOf(this.dlg.arrow);
-                    this.dlg.arrow.setAlpha(1);
-                    this.tweens.add({
-                        targets: this.dlg.arrow, alpha: 0.3, duration: 400,
-                        yoyo: true, repeat: -1
-                    });
-                }
+        s.charTimer = this.time.addEvent({ delay: 22, loop: true, callback: () => {
+            if (ci < s.fullText.length) {
+                s.displayedText += s.fullText[ci]; this.dlg.text.setText(s.displayedText); ci++;
+                if (ci % 3 === 0) this.playSound('type');
+            } else {
+                s.charTimer.destroy(); s.typing = false;
+                this.dlg.arrow.setVisible(true); this.tweens.killTweensOf(this.dlg.arrow); this.dlg.arrow.setAlpha(1);
+                this.tweens.add({ targets: this.dlg.arrow, alpha: 0.3, duration: 400, yoyo: true, repeat: -1 });
             }
-        });
+        }});
     }
 
     advanceDialogue() {
         const s = this.dlgState;
-        if (s.typing) {
-            if (s.charTimer) s.charTimer.destroy();
-            s.typing = false;
-            this.dlg.text.setText(s.fullText);
-            this.dlg.arrow.setVisible(true);
-            return;
-        }
-
+        if (s.typing) { if (s.charTimer) s.charTimer.destroy(); s.typing = false; this.dlg.text.setText(s.fullText); this.dlg.arrow.setVisible(true); return; }
         s.lineIdx++;
-        if (s.lineIdx < s.lines.length) {
-            this.typeText(s.lines[s.lineIdx]);
-        } else if (s.choices.length > 0 && !s.showingChoices) {
-            this.showChoices();
-        } else {
-            this.endDialogue();
-        }
+        if (s.lineIdx < s.lines.length) this.typeText(s.lines[s.lineIdx]);
+        else if (s.choices.length > 0 && !s.showingChoices) this.showChoices();
+        else this.endDialogue();
     }
 
     showChoices() {
-        const s = this.dlgState;
-        s.showingChoices = true;
-        s.choiceIdx = 0;
-        this.dlg.text.setVisible(false);
-        this.dlg.arrow.setVisible(false);
-
-        s.choices.forEach((ch, i) => {
-            if (i < this.dlg.choiceTexts.length) {
-                this.dlg.choiceTexts[i].setText(ch.text).setVisible(true);
-            }
-        });
-        this.dlg.choiceCursor.setVisible(true);
-        this.updateChoiceDisplay();
+        const s = this.dlgState; s.showingChoices = true; s.choiceIdx = 0;
+        this.dlg.text.setVisible(false); this.dlg.arrow.setVisible(false);
+        s.choices.forEach((ch, i) => { if (i < this.dlg.choiceTexts.length) this.dlg.choiceTexts[i].setText(ch.text).setVisible(true); });
+        this.dlg.choiceCursor.setVisible(true); this.updateChoiceDisplay();
     }
 
     updateChoiceDisplay() {
         const s = this.dlgState;
         this.dlg.choiceTexts.forEach((t, i) => t.setColor(i === s.choiceIdx ? '#ffff00' : '#aaaaaa'));
-        if (this.dlg.choiceTexts[s.choiceIdx]) {
-            this.dlg.choiceCursor.setY(this.dlg.choiceTexts[s.choiceIdx].y + 4);
-        }
+        if (this.dlg.choiceTexts[s.choiceIdx]) this.dlg.choiceCursor.setY(this.dlg.choiceTexts[s.choiceIdx].y + 4);
     }
 
     selectChoice() {
-        const s = this.dlgState;
-        if (!s.showingChoices) return;
-        const choice = s.choices[s.choiceIdx];
-        s.showingChoices = false;
-        this.dlg.choiceCursor.setVisible(false);
-        this.dlg.choiceTexts.forEach(t => t.setVisible(false));
-
-        if (s.onChoiceSelect) {
-            s.onChoiceSelect(choice);
-        } else {
-            this.endDialogue();
-        }
+        const s = this.dlgState; if (!s.showingChoices) return;
+        const choice = s.choices[s.choiceIdx]; s.showingChoices = false;
+        this.dlg.choiceCursor.setVisible(false); this.dlg.choiceTexts.forEach(t => t.setVisible(false));
+        if (s.onChoiceSelect) s.onChoiceSelect(choice); else this.endDialogue();
     }
 
     endDialogue() {
-        this.dlg.bg.setVisible(false);
-        this.dlg.bgGlow.setVisible(false);
-        this.dlg.nameBg.setVisible(false);
-        this.dlg.nameText.setVisible(false);
-        this.dlg.text.setVisible(false);
-        this.dlg.arrow.setVisible(false);
-        this.dlg.choiceCursor.setVisible(false);
-        this.dlg.choiceTexts.forEach(t => t.setVisible(false));
-        this.tweens.killTweensOf(this.dlg.arrow);
-        this.dlg.arrow.setAlpha(1);
-
+        Object.values(this.dlg).forEach(v => { if (v?.setVisible) v.setVisible(false); });
+        if (Array.isArray(this.dlg.choiceTexts)) this.dlg.choiceTexts.forEach(t => t.setVisible(false));
+        this.tweens.killTweensOf(this.dlg.arrow); this.dlg.arrow?.setAlpha(1);
         const cb = this.dlgState.onEnd;
-        this.dlgState = {
-            lines: [], lineIdx: 0, choices: [], choiceIdx: 0,
-            showingChoices: false, typing: false, displayedText: '',
-            fullText: '', charTimer: null, npcName: '', onChoiceSelect: null, onEnd: null
-        };
-        this.mode = 'explore';
-        if (cb) cb();
+        this.dlgState = { lines: [], lineIdx: 0, choices: [], choiceIdx: 0, showingChoices: false, typing: false, displayedText: '', fullText: '', charTimer: null, npcName: '', onChoiceSelect: null, onEnd: null };
+        this.mode = 'explore'; if (cb) cb();
     }
 
-    // === NPC DIALOGUE ===
-
+    // === NPC + SHOP ===
     startNPCDialogue(npcData) {
         storyState.meetNPC(npcData.id);
         this.playSound('interact');
 
-        this.showDialogue(
-            npcData.name,
-            npcData.initial_dialogue || ['...'],
-            npcData.initial_choices || [],
-            (choice) => this.handleNPCChoice(npcData, choice),
-            null
+        // Add "Browse wares" choice for merchants
+        let choices = [...(npcData.initial_choices || [])];
+        if (npcData.shop_inventory?.length) {
+            choices = [{ id: '__shop__', text: '🛒 Browse wares' }, ...choices];
+        }
+
+        this.showDialogue(npcData.name, npcData.initial_dialogue || ['...'], choices,
+            (choice) => {
+                if (choice.id === '__shop__') { this.openShop(npcData); return; }
+                this.handleNPCChoice(npcData, choice);
+            }, null
         );
     }
 
     async handleNPCChoice(npcData, choice) {
         this.playSound('interact');
-
-        // Show thinking indicator
         this.dlg.text.setText('  . . .').setVisible(true);
         this.dlg.choiceTexts.forEach(t => t.setVisible(false));
         this.dlg.choiceCursor.setVisible(false);
-
-        // Animate the dots
         let dotCount = 0;
-        const dotTimer = this.time.addEvent({
-            delay: 300, loop: true,
-            callback: () => {
-                dotCount = (dotCount + 1) % 4;
-                this.dlg.text.setText('  ' + '. '.repeat(dotCount + 1));
-            }
-        });
+        const dotTimer = this.time.addEvent({ delay: 300, loop: true, callback: () => { dotCount = (dotCount + 1) % 4; this.dlg.text.setText('  ' + '. '.repeat(dotCount + 1)); }});
 
         const gemini = this.registry.get('geminiClient');
         if (!gemini) { dotTimer.destroy(); this.endDialogue(); return; }
 
         try {
-            const result = await gemini.talkToNPC(
-                npcData.id, npcData.name, choice.id, storyState.toContext()
-            );
+            const result = await gemini.talkToNPC(npcData.id, npcData.name, choice.id, storyState.toContext());
             dotTimer.destroy();
             this.applyEffects(result.effects);
             this.updateHUD();
 
-            this.showDialogue(
-                npcData.name,
-                result.dialogue || ['...'],
-                result.choices || [],
+            this.showDialogue(npcData.name, result.dialogue || ['...'], result.choices || [],
                 result.choices?.length ? (ch) => this.handleNPCChoice(npcData, ch) : null,
-                () => {
-                    if (result.effects?.trigger_combat) {
-                        const enemy = this.roomSpec.enemies?.find(e => e.id === result.effects.trigger_combat);
-                        if (enemy) this.startCombat(enemy);
-                    }
-                }
+                () => { if (result.effects?.trigger_combat) { const enemy = this.roomSpec.enemies?.find(e => e.id === result.effects.trigger_combat); if (enemy) this.startCombat(enemy); }}
             );
         } catch (err) {
-            console.error('NPC dialogue error:', err);
-            dotTimer.destroy();
+            console.error('NPC dialogue error:', err); dotTimer.destroy();
             this.showDialogue(npcData.name, ['...the words fade away.'], [], null, null);
         }
     }
 
-    // === INTERACTABLE OBJECTS ===
+    // === SHOP ===
+    openShop(npcData) {
+        this.endDialogue();
+        this.mode = 'shop';
+        this.shopData = npcData;
+        this.shopItems = npcData.shop_inventory || [];
+        this.shopIdx = 0;
 
+        const W = this.scale.width, H = this.scale.height;
+        const boxH = 160, boxY = H - boxH - 6, boxW = W - 24;
+
+        this.shopUI = {};
+        this.shopUI.bg = this.add.rectangle(W / 2, boxY + boxH / 2, boxW, boxH, 0x000000).setStrokeStyle(3, 0x44ff44).setDepth(50);
+        this.shopUI.title = this.add.text(22, boxY + 6, `${npcData.name}'s Shop`, { fontFamily: '"Press Start 2P"', fontSize: '9px', color: '#44ff44' }).setDepth(51);
+        this.shopUI.gold = this.add.text(W - 36, boxY + 6, '', { fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffd700', align: 'right' }).setOrigin(1, 0).setDepth(51);
+        this.shopUI.items = [];
+        for (let i = 0; i < 5; i++) {
+            this.shopUI.items.push(this.add.text(50, boxY + 24 + i * 20, '', { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#ffffff' }).setDepth(51));
+        }
+        this.shopUI.items.push(this.add.text(50, boxY + 24 + 5 * 20, '← Leave shop', { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#888888' }).setDepth(51));
+        this.shopUI.cursor = this.add.image(30, 0, 'soul').setScale(0.4).setDepth(51);
+        this.shopUI.desc = this.add.text(22, boxY + boxH - 18, '', { fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#aaaaaa' }).setDepth(51);
+        this.updateShopDisplay();
+    }
+
+    updateShopDisplay() {
+        const curr = storyState.theme === 'medieval' ? 'G' : 'CR';
+        this.shopUI.gold.setText(`${storyState.gold} ${curr}`);
+        this.shopItems.forEach((item, i) => {
+            if (i < 5) {
+                const affordable = storyState.gold >= item.price;
+                this.shopUI.items[i].setText(`${item.name}  ${item.price}${curr}`).setColor(affordable ? '#ffffff' : '#666666');
+            }
+        });
+        this.shopUI.items.forEach((t, i) => t.setColor(i === this.shopIdx ? '#ffff00' : (i < this.shopItems.length ? (storyState.gold >= (this.shopItems[i]?.price || 0) ? '#ffffff' : '#666666') : '#888888')));
+        const cy = this.shopUI.items[Math.min(this.shopIdx, this.shopUI.items.length - 1)];
+        if (cy) this.shopUI.cursor.setY(cy.y + 4);
+
+        if (this.shopIdx < this.shopItems.length) {
+            const item = this.shopItems[this.shopIdx];
+            let desc = item.description || '';
+            if (item.effect?.heal) desc += ` (+${item.effect.heal} HP)`;
+            if (item.bonus && item.slot) desc += ` (+${item.bonus} ${item.slot === 'weapon' ? 'ATK' : 'DEF'})`;
+            this.shopUI.desc.setText(desc);
+        } else { this.shopUI.desc.setText(''); }
+    }
+
+    shopSelect() {
+        if (this.shopIdx >= this.shopItems.length) { this.closeShop(); return; }
+        const item = this.shopItems[this.shopIdx];
+        if (storyState.gold < item.price) return;
+        if (storyState.inventory.length >= storyState.maxInventory) return;
+        storyState.gold -= item.price;
+        storyState.addItem(item);
+        this.playSound('item');
+        this.updateShopDisplay();
+        this.updateHUD();
+    }
+
+    closeShop() {
+        Object.values(this.shopUI).forEach(v => { if (v?.destroy) v.destroy(); else if (Array.isArray(v)) v.forEach(t => t.destroy()); });
+        this.shopUI = null;
+        this.mode = 'explore';
+    }
+
+    // === QUEST LOG ===
+    initQuestLog() {
+        this.questLogUI = null;
+    }
+
+    toggleQuestLog() {
+        if (this.mode === 'questlog') {
+            if (this.questLogUI) Object.values(this.questLogUI).forEach(v => { if (Array.isArray(v)) v.forEach(t => t.destroy()); else v?.destroy(); });
+            this.questLogUI = null;
+            this.mode = 'explore';
+            return;
+        }
+        this.mode = 'questlog';
+        this.player.setVelocity(0);
+        const W = this.scale.width, H = this.scale.height;
+        const ui = {};
+        ui.bg = this.add.rectangle(W / 2, H / 2, W - 60, H - 60, 0x000000, 0.95).setStrokeStyle(3, 0xffffff).setDepth(60);
+        ui.title = this.add.text(W / 2, 50, 'JOURNAL', { fontFamily: '"Press Start 2P"', fontSize: '14px', color: '#ffff00' }).setOrigin(0.5).setDepth(61);
+
+        const lines = [];
+        // Stats
+        lines.push(this.add.text(50, 80, `LV ${storyState.level}  HP ${storyState.hp}/${storyState.maxHp}  ATK ${storyState.getATK()}  DEF ${storyState.getDEF()}`, { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#ffffff' }).setDepth(61));
+        lines.push(this.add.text(50, 95, `Alignment: ${storyState.getMoralAlignment().toUpperCase()}  |  Kills: ${storyState.reputation.kills}  Spares: ${storyState.reputation.spares}`, { fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#888888' }).setDepth(61));
+
+        // Equipment
+        const wp = storyState.equipment.weapon;
+        const ar = storyState.equipment.armor;
+        lines.push(this.add.text(50, 115, `Weapon: ${wp ? wp.name + ' (+' + wp.bonus + ')' : 'None'}  Armor: ${ar ? ar.name + ' (+' + ar.bonus + ')' : 'None'}`, { fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#aaaaaa' }).setDepth(61));
+
+        // Active quests
+        lines.push(this.add.text(50, 140, '── ACTIVE QUESTS ──', { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#44aaff' }).setDepth(61));
+        let y = 158;
+        for (const q of storyState.activeQuests) {
+            lines.push(this.add.text(50, y, `◆ ${q.title}`, { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#ffffff' }).setDepth(61));
+            lines.push(this.add.text(60, y + 14, q.description || '', { fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#888888' }).setDepth(61));
+            y += 30;
+        }
+        if (storyState.activeQuests.length === 0) {
+            lines.push(this.add.text(50, y, 'No active quests', { fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#666666' }).setDepth(61));
+            y += 16;
+        }
+
+        // Inventory
+        lines.push(this.add.text(50, y + 10, '── INVENTORY ──', { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#ffaa22' }).setDepth(61));
+        y += 28;
+        if (storyState.inventory.length === 0) {
+            lines.push(this.add.text(50, y, 'Empty', { fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#666666' }).setDepth(61));
+        } else {
+            for (const item of storyState.inventory) {
+                lines.push(this.add.text(50, y, `• ${item.name} (${item.type})`, { fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#dddddd' }).setDepth(61));
+                y += 14;
+            }
+        }
+
+        lines.push(this.add.text(W / 2, H - 45, '[X] Close', { fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#666666' }).setOrigin(0.5).setDepth(61));
+        ui.lines = lines;
+        this.questLogUI = ui;
+    }
+
+    // === OBJECTS ===
     async interactWithObject(objData) {
         this.playSound('interact');
-
         if (objData.locked && objData.requires_item) {
             if (storyState.hasItem(objData.requires_item)) {
-                storyState.removeItem(objData.requires_item);
-                objData.locked = false;
+                storyState.removeItem(objData.requires_item); objData.locked = false;
                 const entry = this.npcDataMap[`inter_${objData.id}`];
                 if (entry?.lockIcon) entry.lockIcon.destroy();
                 this.showDialogue('', [`Used ${objData.requires_item}. It's now open!`], [], null, null);
                 storyState.logEvent(`unlocked:${objData.id}`);
-            } else {
-                this.showDialogue('', ['It\'s locked. You need something to open it.'], [], null, null);
-            }
+            } else { this.showDialogue('', ['It\'s locked. You need something to open it.'], [], null, null); }
             return;
         }
-
         if (objData.interact_text) {
-            this.showDialogue('', objData.interact_text, [], null, () => {
-                if (objData.interact_effect) this.applyEffects(objData.interact_effect);
-                this.updateHUD();
-            });
+            this.showDialogue('', objData.interact_text, [], null, () => { if (objData.interact_effect) this.applyEffects(objData.interact_effect); this.updateHUD(); });
             return;
         }
-
         const gemini = this.registry.get('geminiClient');
         if (!gemini) { this.showDialogue('', ['Nothing happens.'], [], null, null); return; }
-
         this.showDialogue('', ['...'], [], null, null);
         try {
             const result = await gemini.interactObject(objData.id, objData, storyState.toContext());
-            this.applyEffects(result.effects);
-            this.updateHUD();
-            this.endDialogue();
+            this.applyEffects(result.effects); this.updateHUD(); this.endDialogue();
             this.showDialogue('', result.dialogue || ['Nothing happens.'], [], null, null);
-        } catch (err) {
-            this.endDialogue();
-            this.showDialogue('', ['Nothing happens.'], [], null, null);
-        }
+        } catch { this.endDialogue(); this.showDialogue('', ['Nothing happens.'], [], null, null); }
     }
-
-    // === EFFECTS ===
 
     applyEffects(effects) {
         if (!effects) return;
-        if (effects.give_item && typeof effects.give_item === 'object') {
-            const added = storyState.addItem(effects.give_item);
-            if (added) this.playSound('item');
-        }
+        if (effects.give_item && typeof effects.give_item === 'object') { if (storyState.addItem(effects.give_item)) this.playSound('item'); }
         if (effects.take_item) storyState.removeItem(effects.take_item);
         if (effects.set_flag) storyState.setFlag(effects.set_flag.key, effects.set_flag.value);
         if (effects.heal) storyState.heal(effects.heal);
         if (effects.give_gold) storyState.addGold(effects.give_gold);
+        if (effects.give_xp) storyState.gainXP(effects.give_xp);
+        if (effects.complete_quest) {
+            const q = storyState.completeQuest(effects.complete_quest);
+            if (q?.reward) { if (q.reward.xp) storyState.gainXP(q.reward.xp); if (q.reward.gold) storyState.addGold(q.reward.gold); }
+        }
+        if (effects.add_quest) storyState.addQuest(effects.add_quest);
         if (effects.open_path) {
             for (const exit of (this.roomSpec.exits || [])) {
                 if (exit.id === effects.open_path) {
                     exit.blocked = false;
                     const pos = this.getExitPos(exit);
-                    const zw = (exit.direction === 'top' || exit.direction === 'bottom') ? DOOR_GAP : WALL + 6;
-                    const zh = (exit.direction === 'top' || exit.direction === 'bottom') ? WALL + 6 : DOOR_GAP;
-                    const zone = this.add.rectangle(pos.x, pos.y, zw, zh, 0x000000, 0);
-                    this.physics.add.existing(zone, true);
-                    zone.setData('exitData', exit);
-                    this.exitZones.add(zone);
-                    this.physics.add.overlap(this.player, zone, this.onExit, null, this);
+                    const isV = exit.direction === 'top' || exit.direction === 'bottom';
+                    const zone = this.add.rectangle(pos.x, pos.y, isV ? DOOR_GAP : WALL + 6, isV ? WALL + 6 : DOOR_GAP, 0x000000, 0);
+                    this.physics.add.existing(zone, true); zone.setData('exitData', exit);
+                    this.exitZones.add(zone); this.physics.add.overlap(this.player, zone, this.onExit, null, this);
                 }
             }
-            for (const inter of (this.roomSpec.interactables || [])) {
-                if (inter.id === effects.open_path) inter.locked = false;
-            }
         }
     }
-
-    // === ITEMS ===
 
     onItem(player, itemSprite) {
-        const data = itemSprite.getData('itemData');
-        if (!data) return;
-        itemSprite.setData('itemData', null);
-        if (itemSprite.body) itemSprite.body.enable = false;
-
+        const data = itemSprite.getData('itemData'); if (!data) return;
+        itemSprite.setData('itemData', null); if (itemSprite.body) itemSprite.body.enable = false;
         const added = storyState.addItem(data);
         if (added) {
-            this.playSound('item');
-            storyState.logEvent(`found:${data.id}`);
-            this.tweens.add({
-                targets: itemSprite, y: itemSprite.y - 20, alpha: 0, scaleX: 2, scaleY: 2,
-                duration: 300, onComplete: () => itemSprite.destroy()
-            });
+            this.playSound('item'); storyState.logEvent(`found:${data.id}`);
+            const qc = storyState.checkQuestObjective('find', data.id);
+            if (qc) { const q = storyState.completeQuest(qc); if (q?.reward) { if (q.reward.xp) storyState.gainXP(q.reward.xp); if (q.reward.gold) storyState.addGold(q.reward.gold); } }
+            this.tweens.add({ targets: itemSprite, y: itemSprite.y - 20, alpha: 0, scaleX: 2, scaleY: 2, duration: 300, onComplete: () => itemSprite.destroy() });
             this.showDialogue('', [`Found: ${data.name}`, data.description || ''], [], null, null);
             this.updateHUD();
-        } else {
-            this.showDialogue('', ['Inventory full!'], [], null, null);
-            itemSprite.setData('itemData', data);
-            if (itemSprite.body) itemSprite.body.enable = true;
-        }
+        } else { this.showDialogue('', ['Inventory full!'], [], null, null); itemSprite.setData('itemData', data); if (itemSprite.body) itemSprite.body.enable = true; }
     }
-
-    // === COMBAT ===
 
     startCombat(enemyData) {
         this.transitioning = true;
         this.cameras.main.shake(300, 0.02);
         this.time.delayedCall(400, () => {
-            this.cameras.main.fadeOut(400, 0, 0, 0);
+            this.cameras.main.fadeOut(400);
             this.cameras.main.once('camerafadeoutcomplete', () => {
-                this.scene.start('CombatScene', {
-                    enemy: enemyData,
-                    roomSpec: this.roomSpec,
-                    entryDirection: this.entryDirection
-                });
+                this.scene.start('CombatScene', { enemy: enemyData, roomSpec: this.roomSpec, entryDirection: this.entryDirection });
             });
         });
     }
-
-    // === EXITS ===
 
     onExit(player, zone) {
         if (this.transitioning || this.mode !== 'explore') return;
         this.transitioning = true;
         const exit = zone.getData('exitData');
-        if (exit.requires_item && !storyState.hasItem(exit.requires_item)) {
-            this.transitioning = false;
-            this.showDialogue('', ['The way is blocked...'], [], null, null);
-            return;
-        }
-
-        storyState.logEvent(`exited:${exit.direction}:${exit.label || ''}`);
-        this.playSound('exit');
-
+        if (exit.requires_item && !storyState.hasItem(exit.requires_item)) { this.transitioning = false; this.showDialogue('', ['The way is blocked...'], [], null, null); return; }
+        storyState.logEvent(`exited:${exit.direction}:${exit.label || ''}`); this.playSound('exit');
         const opposites = { left: 'right', right: 'left', top: 'bottom', bottom: 'top' };
         const entryDir = opposites[exit.direction] || 'bottom';
         const trigger = `exited ${exit.direction} toward "${exit.label || 'unknown'}"`;
-
         this.cameras.main.flash(200, 255, 255, 255);
         this.cameras.main.once('cameraflashcomplete', () => {
-            this.cameras.main.fadeOut(400, 0, 0, 0);
-            this.cameras.main.once('camerafadeoutcomplete', () => {
-                this.scene.start('TransitionScene', { trigger, entryDirection: entryDir });
-            });
+            this.cameras.main.fadeOut(400);
+            this.cameras.main.once('camerafadeoutcomplete', () => { this.scene.start('TransitionScene', { trigger, entryDirection: entryDir }); });
         });
     }
 
     // === AUDIO ===
-
     setupAudio() {
-        if (this.registry.get('audioCtx')) {
-            this.audioCtx = this.registry.get('audioCtx');
-        } else {
-            try {
-                this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-                this.registry.set('audioCtx', this.audioCtx);
-            } catch (e) { this.audioCtx = null; }
-        }
+        if (this.registry.get('audioCtx')) this.audioCtx = this.registry.get('audioCtx');
+        else { try { this.audioCtx = new (window.AudioContext || window.webkitAudioContext)(); this.registry.set('audioCtx', this.audioCtx); } catch { this.audioCtx = null; } }
     }
 
     playSound(type) {
@@ -1060,32 +981,10 @@ export default class GameScene extends Phaser.Scene {
         const osc = ctx.createOscillator(), gain = ctx.createGain();
         osc.connect(gain); gain.connect(ctx.destination);
         switch (type) {
-            case 'interact':
-                osc.frequency.setValueAtTime(440, now);
-                osc.frequency.setValueAtTime(660, now + 0.05);
-                gain.gain.setValueAtTime(0.1, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
-                osc.start(now); osc.stop(now + 0.12); break;
-            case 'item':
-                osc.frequency.setValueAtTime(523, now);
-                osc.frequency.setValueAtTime(659, now + 0.06);
-                osc.frequency.setValueAtTime(784, now + 0.12);
-                gain.gain.setValueAtTime(0.1, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
-                osc.start(now); osc.stop(now + 0.2); break;
-            case 'exit':
-                osc.type = 'sine';
-                osc.frequency.setValueAtTime(200, now);
-                osc.frequency.exponentialRampToValueAtTime(800, now + 0.3);
-                gain.gain.setValueAtTime(0.08, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
-                osc.start(now); osc.stop(now + 0.3); break;
-            case 'type':
-                osc.type = 'square';
-                osc.frequency.setValueAtTime(Phaser.Math.Between(180, 260), now);
-                gain.gain.setValueAtTime(0.03, now);
-                gain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
-                osc.start(now); osc.stop(now + 0.04); break;
+            case 'interact': osc.frequency.setValueAtTime(440, now); osc.frequency.setValueAtTime(660, now + 0.05); gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12); osc.start(now); osc.stop(now + 0.12); break;
+            case 'item': osc.frequency.setValueAtTime(523, now); osc.frequency.setValueAtTime(659, now + 0.06); osc.frequency.setValueAtTime(784, now + 0.12); gain.gain.setValueAtTime(0.1, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2); osc.start(now); osc.stop(now + 0.2); break;
+            case 'exit': osc.type = 'sine'; osc.frequency.setValueAtTime(200, now); osc.frequency.exponentialRampToValueAtTime(800, now + 0.3); gain.gain.setValueAtTime(0.08, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3); osc.start(now); osc.stop(now + 0.3); break;
+            case 'type': osc.type = 'square'; osc.frequency.setValueAtTime(Phaser.Math.Between(180, 260), now); gain.gain.setValueAtTime(0.025, now); gain.gain.exponentialRampToValueAtTime(0.001, now + 0.035); osc.start(now); osc.stop(now + 0.035); break;
         }
     }
 }
