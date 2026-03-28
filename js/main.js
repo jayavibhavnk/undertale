@@ -7,6 +7,7 @@ import { GeminiClient } from './gemini.js';
 import { CutsceneClient, CutscenePlayer } from './cutsceneClient.js';
 import storyState from './storyState.js';
 import { runCharacterCreation } from './CharacterCreate.js';
+import musicManager from './MusicManager.js';
 
 let game = null;
 
@@ -67,6 +68,7 @@ function initGame(apiKey, model, characterData) {
     game.registry.set('cutscenePlayer', player);
     game.registry.set('storyState', storyState);
     game.registry.set('apiKey', apiKey);
+    game.registry.set('musicManager', musicManager);
 
     setTimeout(() => {
         const canvas = document.querySelector('#game-container canvas');
@@ -86,6 +88,9 @@ document.addEventListener('DOMContentLoaded', () => {
         const model = document.getElementById('model-select').value;
 
         document.getElementById('setup-screen').style.display = 'none';
+
+        musicManager.setApiKey(key);
+        musicManager.play('menu');
 
         const characterData = await runCharacterCreation();
 

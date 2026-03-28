@@ -15,6 +15,12 @@ export default class CombatScene extends Phaser.Scene {
         const W = this.scale.width, H = this.scale.height;
         this.cameras.main.setBackgroundColor('#000000');
 
+        const music = this.registry.get('musicManager');
+        if (music) {
+            const theme = storyState.theme || 'cyberpunk';
+            music.play(`combat_${theme}`, 1000);
+        }
+
         this.enemyHp = this.enemyData.hp;
         this.enemyMaxHp = this.enemyData.hp;
         this.enemyWeakened = false;

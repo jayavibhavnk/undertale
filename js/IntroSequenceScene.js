@@ -65,6 +65,14 @@ export default class IntroSequenceScene extends Phaser.Scene {
 
         this.kickOffParallelWork();
         this.generateIntro();
+
+        const music = this.registry.get('musicManager');
+        if (music) {
+            const theme = storyState.theme || 'cyberpunk';
+            music.play(`intro_${theme}`);
+            music.preload(`combat_${theme}`);
+            music.preload(`explore_${theme}_calm`);
+        }
     }
 
     // ── Parallel background work during narration ──

@@ -46,15 +46,17 @@ STORY_DIR = ASSETS_DIR / "story_state"
 PORTRAITS_DIR = ASSETS_DIR / "portraits"
 PRESETS_DIR = ASSETS_DIR / "presets"
 UPLOADS_DIR = ASSETS_DIR / "uploads"
+MUSIC_DIR = ASSETS_DIR / "music"
 
 for d in [ASSETS_DIR, REFS_DIR, MASTER_SHEETS_DIR, VIDEO_REFS_DIR,
           SCENE_PACKAGES_DIR, VIDEOS_DIR, STORY_DIR, PORTRAITS_DIR,
-          PRESETS_DIR, UPLOADS_DIR]:
+          PRESETS_DIR, UPLOADS_DIR, MUSIC_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 MODELS = {
     "image_fast": "gemini-3.1-flash-image-preview",
     "image_pro":  "gemini-3-pro-image-preview",
+    "music":      "lyria-3-clip-preview",
     "video":      "veo-3.1-preview",
     "text":       "gemini-3.1-flash-lite-preview",
 }
@@ -1298,6 +1300,70 @@ def serve_asset(folder: str, filename: str):
         raise HTTPException(404, "Asset not found")
     mime, _ = mimetypes.guess_type(str(fp))
     return FileResponse(fp, media_type=mime or "application/octet-stream")
+
+
+# ────────────────────────────────────────────────────────────
+# Music Generation via Lyria
+# ────────────────────────────────────────────────────────────
+
+class MusicRequest(BaseModel):
+    api_key: str
+    cache_key: str
+    prompt: str
+
+
+@app.post("/api/generate-music")
+def generate_music(req: MusicRequest):
+    """Generate a 30-second music clip via Lyria. Cached by cache_key."""
+    safe_key = "".join(c if c.isalnum() or c == "_" else "_" for c in req.cache_key)
+
+    for ext in (".wav", ".mp3", ".ogg", ".webm", ".flac"):
+        cached = MUSIC_DIR / f"{safe_key}{ext}"
+        if cached.exists():
+            return {"music_url": f"/api/music/{cached.name}", "cached": True}
+
+    try:
+        client = genai.Client(api_key=req.api_key)
+        contents = [types.Content(role="user", parts=[types.Part.from_text(text=req.prompt)])]
+        config = types.GenerateContentConfig(response_modalities=["audio"])
+
+        audio_data = b""
+        mime_type = "audio/wav"
+
+        for chunk in client.models.generate_content_stream(
+            model=MODELS["music"],
+            contents=contents,
+            config=config,
+        ):
+            if chunk.parts is None:
+                continue
+            part = chunk.parts[0]
+            if part.inline_data and part.inline_data.data:
+                audio_data += part.inline_data.data
+                if part.inline_data.mime_type:
+                    mime_type = part.inline_data.mime_type
+
+        if not audio_data:
+            raise ValueError("No audio data received from Lyria")
+
+        ext = mimetypes.guess_extension(mime_type) or ".wav"
+        save_path = MUSIC_DIR / f"{safe_key}{ext}"
+        save_path.write_bytes(audio_data)
+        print(f"[music] Generated {save_path.name} ({len(audio_data)} bytes)")
+        return {"music_url": f"/api/music/{save_path.name}", "cached": False}
+
+    except Exception as e:
+        print(f"[music] Error generating {req.cache_key}: {e}")
+        raise HTTPException(500, f"Music generation failed: {str(e)}")
+
+
+@app.get("/api/music/{filename}")
+def serve_music(filename: str):
+    fp = MUSIC_DIR / filename
+    if not fp.exists():
+        raise HTTPException(404, "Music not found")
+    mime, _ = mimetypes.guess_type(str(fp))
+    return FileResponse(fp, media_type=mime or "audio/wav")
 
 
 # ────────────────────────────────────────────────────────────

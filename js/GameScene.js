@@ -92,6 +92,14 @@ export default class GameScene extends Phaser.Scene {
         this.setupAudio();
         this.cameras.main.fadeIn(500);
 
+        const music = this.registry.get('musicManager');
+        if (music) {
+            const theme = storyState.theme || 'cyberpunk';
+            const mood = spec.mood || 'calm';
+            const cat = ['calm', 'peaceful'].includes(mood) ? 'calm' : 'tense';
+            music.play(`explore_${theme}_${cat}`);
+        }
+
         if (spec.narration && !this.combatResult) {
             this.time.delayedCall(600, () => this.showDialogue('', [spec.narration], [], null));
         }
