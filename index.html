@@ -11,6 +11,7 @@
 </head>
 <body>
     <div id="game-wrapper">
+        <!-- ── Setup: API Key ── -->
         <div id="setup-screen">
             <div class="title-art">
                 <h1>UNIFACTORY</h1>
@@ -32,7 +33,168 @@
             </div>
             <p class="controls-hint">ARROWS move | Z interact | X cancel</p>
         </div>
+
+        <!-- ── Character Creation ── -->
+        <div id="character-create-screen" style="display:none;">
+            <!-- Progress -->
+            <div class="cc-progress">
+                <div class="cc-progress-track">
+                    <div class="cc-progress-fill" id="cc-progress-fill"></div>
+                </div>
+                <div class="cc-progress-labels">
+                    <span class="cc-plabel active" data-step="0">IDENTITY</span>
+                    <span class="cc-plabel" data-step="1">WORLD</span>
+                    <span class="cc-plabel" data-step="2">AVATAR</span>
+                    <span class="cc-plabel" data-step="3">ENEMIES</span>
+                </div>
+            </div>
+
+            <!-- Step 0: Name + Soul -->
+            <div class="cc-step active" data-step="0">
+                <div class="cc-title-bar">
+                    <div class="cc-title-slash"></div>
+                    <h2 class="cc-title">NAME YOUR SOUL</h2>
+                </div>
+                <div class="cc-step-content cc-identity-content">
+                    <div class="cc-name-section">
+                        <input type="text" id="cc-name-input" class="cc-input" maxlength="12" placeholder="ENTER NAME..." spellcheck="false" autocomplete="off">
+                        <div id="cc-name-easter" class="cc-easter-egg"></div>
+                    </div>
+                    <div class="cc-soul-section">
+                        <p class="cc-label">CHOOSE YOUR ESSENCE</p>
+                        <div class="cc-soul-grid" id="cc-soul-grid">
+                            <button class="cc-soul-btn selected" data-color="#FF0000" data-trait="Determination">
+                                <span class="cc-soul-heart" style="color:#FF0000;">♥</span>
+                                <span class="cc-soul-name">DETERMINATION</span>
+                            </button>
+                            <button class="cc-soul-btn" data-color="#FF8C00" data-trait="Bravery">
+                                <span class="cc-soul-heart" style="color:#FF8C00;">♥</span>
+                                <span class="cc-soul-name">BRAVERY</span>
+                            </button>
+                            <button class="cc-soul-btn" data-color="#FFFF00" data-trait="Justice">
+                                <span class="cc-soul-heart" style="color:#FFFF00;">♥</span>
+                                <span class="cc-soul-name">JUSTICE</span>
+                            </button>
+                            <button class="cc-soul-btn" data-color="#00FF00" data-trait="Kindness">
+                                <span class="cc-soul-heart" style="color:#00FF00;">♥</span>
+                                <span class="cc-soul-name">KINDNESS</span>
+                            </button>
+                            <button class="cc-soul-btn" data-color="#00FFFF" data-trait="Patience">
+                                <span class="cc-soul-heart" style="color:#00FFFF;">♥</span>
+                                <span class="cc-soul-name">PATIENCE</span>
+                            </button>
+                            <button class="cc-soul-btn" data-color="#0066FF" data-trait="Integrity">
+                                <span class="cc-soul-heart" style="color:#0066FF;">♥</span>
+                                <span class="cc-soul-name">INTEGRITY</span>
+                            </button>
+                            <button class="cc-soul-btn" data-color="#CC00FF" data-trait="Perseverance">
+                                <span class="cc-soul-heart" style="color:#CC00FF;">♥</span>
+                                <span class="cc-soul-name">PERSEVERANCE</span>
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 1: Theme/World -->
+            <div class="cc-step" data-step="1">
+                <div class="cc-title-bar">
+                    <div class="cc-title-slash"></div>
+                    <h2 class="cc-title">CHOOSE YOUR WORLD</h2>
+                </div>
+                <div class="cc-step-content">
+                    <div class="cc-theme-grid" id="cc-theme-grid">
+                        <button class="cc-theme-card" data-theme="cyberpunk" data-accent="#00ffff">
+                            <div class="cc-theme-icon">⚡</div>
+                            <div class="cc-theme-info">
+                                <span class="cc-theme-name" style="color:#00ffff;">CYBERPUNK</span>
+                                <span class="cc-theme-desc">Neon streets. Corporate secrets. Digital rebellion.</span>
+                            </div>
+                        </button>
+                        <button class="cc-theme-card" data-theme="medieval" data-accent="#ffd700">
+                            <div class="cc-theme-icon">⚔</div>
+                            <div class="cc-theme-info">
+                                <span class="cc-theme-name" style="color:#ffd700;">MEDIEVAL</span>
+                                <span class="cc-theme-desc">Dark curses. Sacred relics. A kingdom to save.</span>
+                            </div>
+                        </button>
+                        <button class="cc-theme-card" data-theme="space" data-accent="#4488ff">
+                            <div class="cc-theme-icon">✦</div>
+                            <div class="cc-theme-info">
+                                <span class="cc-theme-name" style="color:#4488ff;">SPACE</span>
+                                <span class="cc-theme-desc">Derelict station. Strange signals. Cosmic dread.</span>
+                            </div>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 2: Avatar (Photo or Preset) -->
+            <div class="cc-step" data-step="2">
+                <div class="cc-title-bar">
+                    <div class="cc-title-slash"></div>
+                    <h2 class="cc-title">FORGE YOUR AVATAR</h2>
+                </div>
+                <div class="cc-step-content cc-avatar-content">
+                    <div class="cc-avatar-tabs">
+                        <button class="cc-tab active" data-tab="presets">PRESETS</button>
+                        <button class="cc-tab" data-tab="upload">UPLOAD PHOTO</button>
+                    </div>
+                    <div class="cc-tab-panel active" id="cc-tab-presets">
+                        <div class="cc-preset-grid" id="cc-char-presets"></div>
+                    </div>
+                    <div class="cc-tab-panel" id="cc-tab-upload">
+                        <div class="cc-upload-zone" id="cc-upload-zone">
+                            <input type="file" id="cc-photo-input" accept="image/*" hidden>
+                            <div class="cc-upload-label" id="cc-upload-label">
+                                <span class="cc-upload-icon">📷</span>
+                                <span>DROP PHOTO OR CLICK</span>
+                                <span class="cc-upload-hint">AI will forge your game avatar</span>
+                            </div>
+                            <div class="cc-upload-preview" id="cc-upload-preview" style="display:none;">
+                                <img id="cc-preview-img" alt="preview">
+                                <button class="cc-upload-clear" id="cc-upload-clear">✕</button>
+                            </div>
+                        </div>
+                        <div class="cc-gen-status" id="cc-gen-status" style="display:none;">
+                            <div class="cc-gen-bar"><div class="cc-gen-fill" id="cc-gen-fill"></div></div>
+                            <span id="cc-gen-text">Generating assets...</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Step 3: Enemies -->
+            <div class="cc-step" data-step="3">
+                <div class="cc-title-bar">
+                    <div class="cc-title-slash"></div>
+                    <h2 class="cc-title">KNOW YOUR ENEMY</h2>
+                </div>
+                <div class="cc-step-content">
+                    <p class="cc-label cc-enemy-hint">Select the foes that await you (pick up to 3)</p>
+                    <div class="cc-enemy-grid" id="cc-enemy-grid"></div>
+                </div>
+            </div>
+
+            <!-- Navigation -->
+            <div class="cc-nav">
+                <button class="cc-nav-btn cc-btn-back" id="cc-btn-back" style="visibility:hidden;">◄ BACK</button>
+                <div class="cc-step-dots" id="cc-step-dots">
+                    <span class="cc-dot active"></span>
+                    <span class="cc-dot"></span>
+                    <span class="cc-dot"></span>
+                    <span class="cc-dot"></span>
+                </div>
+                <button class="cc-nav-btn cc-btn-next" id="cc-btn-next">NEXT ►</button>
+            </div>
+        </div>
+
         <div id="game-container" style="display:none;"></div>
+    </div>
+
+    <div id="cutscene-overlay">
+        <video id="cutscene-video" playsinline></video>
+        <button id="cutscene-skip">SKIP ▶</button>
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/phaser@3.80.1/dist/phaser.min.js"></script>

@@ -95,6 +95,42 @@ export default class GameScene extends Phaser.Scene {
         if (spec.narration && !this.combatResult) {
             this.time.delayedCall(600, () => this.showDialogue('', [spec.narration], [], null));
         }
+
+        this.preloadEnemyCutscenes();
+    }
+
+    preloadEnemyCutscenes() {
+        const cutsceneClient = this.registry.get('cutsceneClient');
+        if (!cutsceneClient?.ready) return;
+
+        const alive = (this.roomSpec.enemies || []).filter(e =>
+            !storyState.npcsDefeated.includes(e.id) &&
+            !storyState.npcsSpared.includes(e.id)
+        );
+        if (alive.length === 0) return;
+
+        const sorted = [...alive].sort((a, b) => (b.hp || 0) - (a.hp || 0));
+        const requests = [];
+
+        for (const enemy of sorted) {
+            const ctx = {
+                enemy_name: enemy.name, enemy_color: enemy.color || '',
+                room_name: this.roomSpec.name || '', room_mood: this.roomSpec.mood || '',
+            };
+            requests.push({ cache_key: `boss_intro_${enemy.id}`, trigger_type: 'boss_intro', context: ctx });
+        }
+
+        const strongest = sorted[0];
+        const sCtx = {
+            enemy_name: strongest.name, enemy_color: strongest.color || '',
+            room_name: this.roomSpec.name || '', room_mood: this.roomSpec.mood || '',
+        };
+        requests.push({ cache_key: `boss_victory_${strongest.id}`, trigger_type: 'boss_outcome_victory', context: sCtx });
+        requests.push({ cache_key: `boss_spare_${strongest.id}`, trigger_type: 'boss_outcome_spare', context: sCtx });
+
+        cutsceneClient.preload(requests).then(res => {
+            if (res.queued?.length) console.log('[cutscene] preloading enemy cutscenes:', res.queued);
+        }).catch(() => {});
     }
 
     update(time, delta) {
@@ -121,7 +157,9 @@ export default class GameScene extends Phaser.Scene {
         }
 
         if (this.mode === 'dialogue') {
-            if (this.dlgState.showingChoices) {
+            if (Phaser.Input.Keyboard.JustDown(this.xKey)) {
+                this.endDialogue();
+            } else if (this.dlgState.showingChoices) {
                 if (Phaser.Input.Keyboard.JustDown(this.cursors.up))
                     this.dlgState.choiceIdx = Math.max(0, this.dlgState.choiceIdx - 1);
                 if (Phaser.Input.Keyboard.JustDown(this.cursors.down))
@@ -610,24 +648,194 @@ export default class GameScene extends Phaser.Scene {
         else if (target.type === 'interactable') this.interactWithObject(target.data);
     }
 
-    // === DIALOGUE ===
+    // === DIALOGUE (Persona 5–style portraits) ===
     initDialogue() {
         const W = this.scale.width, H = this.scale.height;
-        const boxH = 130, boxY = H - boxH - 6, boxW = W - 24;
+        const PW = 120, PH = 164;
+        const boxH = 120, boxY = H - boxH - 6, boxW = W - 24;
+        const pCX = 18 + PW / 2;
+        const pCY = boxY + boxH - PH / 2;
+        const textX = 18 + PW + 14;
+        const textWrap = boxW - PW - 48;
+
         this.dlgBoxY = boxY;
+        this._pCX = pCX; this._pCY = pCY; this._PW = PW; this._PH = PH;
         this.dlg = {};
-        this.dlg.bgGlow = this.add.rectangle(W / 2, boxY + boxH / 2, boxW + 6, boxH + 6, 0xffffff, 0.05).setDepth(49).setVisible(false);
-        this.dlg.bg = this.add.rectangle(W / 2, boxY + boxH / 2, boxW, boxH, 0x000000).setStrokeStyle(3, 0xffffff).setDepth(50).setVisible(false);
-        this.dlg.nameBg = this.add.rectangle(20, boxY - 1, 10, 16, 0x000000).setOrigin(0, 0.5).setStrokeStyle(2, 0xffffff).setDepth(50).setVisible(false);
-        this.dlg.nameText = this.add.text(26, boxY - 1, '', { fontFamily: '"Press Start 2P"', fontSize: '9px', color: '#ffff00' }).setOrigin(0, 0.5).setDepth(51).setVisible(false);
-        this.dlg.text = this.add.text(22, boxY + 18, '', { fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffffff', wordWrap: { width: boxW - 40 }, lineSpacing: 6 }).setDepth(51).setVisible(false);
-        this.dlg.arrow = this.add.text(W - 36, boxY + boxH - 20, '▼ Z', { fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffff00' }).setDepth(51).setVisible(false);
+
+        this.dlg.bgGlow = this.add.rectangle(W / 2, boxY + boxH / 2, boxW + 6, boxH + 6, 0xffffff, 0.05)
+            .setDepth(49).setVisible(false);
+        this.dlg.bg = this.add.rectangle(W / 2, boxY + boxH / 2, boxW, boxH, 0x000000)
+            .setStrokeStyle(3, 0xffffff).setDepth(50).setVisible(false);
+
+        this.dlg.portraitGlow = this.add.rectangle(pCX, pCY, PW + 18, PH + 18, 0xff2d55, 0.05)
+            .setDepth(49).setVisible(false);
+        this.dlg.portraitBg = this.add.rectangle(pCX, pCY, PW + 4, PH + 4, 0x000000)
+            .setDepth(50).setVisible(false);
+        this.dlg.portraitBorder = this.add.rectangle(pCX, pCY, PW, PH, 0x111111)
+            .setStrokeStyle(3, 0xff2d55).setDepth(51).setVisible(false);
+        this.dlg.portrait = this.add.image(pCX, pCY, 'portrait_npc')
+            .setDisplaySize(PW - 6, PH - 6).setDepth(52).setVisible(false);
+        this.dlg.portraitSlash = this.add.rectangle(pCX, pCY + PH / 2 - 5, PW + 12, 7, 0xff2d55, 0.7)
+            .setDepth(53).setVisible(false);
+
+        this.dlg.nameBg = this.add.rectangle(textX - 4, boxY - 1, 10, 18, 0x000000)
+            .setOrigin(0, 0.5).setStrokeStyle(2, 0xffffff).setDepth(50).setVisible(false);
+        this.dlg.nameText = this.add.text(textX + 4, boxY - 1, '', {
+            fontFamily: '"Press Start 2P"', fontSize: '9px', color: '#ffff00'
+        }).setOrigin(0, 0.5).setDepth(51).setVisible(false);
+        this.dlg.text = this.add.text(textX, boxY + 18, '', {
+            fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffffff',
+            wordWrap: { width: textWrap }, lineSpacing: 6
+        }).setDepth(51).setVisible(false);
+        this.dlg.arrow = this.add.text(W - 36, boxY + boxH - 20, '▼ Z', {
+            fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffff00'
+        }).setDepth(51).setVisible(false);
+
         this.dlg.choiceTexts = [];
         for (let i = 0; i < 6; i++) {
-            this.dlg.choiceTexts.push(this.add.text(50, boxY + 18 + i * 18, '', { fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffffff' }).setDepth(51).setVisible(false));
+            this.dlg.choiceTexts.push(
+                this.add.text(textX + 16, boxY + 18 + i * 18, '', {
+                    fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffffff'
+                }).setDepth(51).setVisible(false)
+            );
         }
-        this.dlg.choiceCursor = this.add.image(30, boxY + 24, 'soul').setScale(0.5).setDepth(51).setVisible(false);
-        this.dlgState = { lines: [], lineIdx: 0, choices: [], choiceIdx: 0, showingChoices: false, typing: false, displayedText: '', fullText: '', charTimer: null, npcName: '', onChoiceSelect: null, onEnd: null };
+        this.dlg.choiceCursor = this.add.image(textX, boxY + 24, 'soul')
+            .setScale(0.5).setDepth(51).setVisible(false);
+
+        this.dlgState = {
+            lines: [], lineIdx: 0, choices: [], choiceIdx: 0,
+            showingChoices: false, typing: false, displayedText: '',
+            fullText: '', charTimer: null, npcName: '',
+            onChoiceSelect: null, onEnd: null
+        };
+
+        this._portraitQueue = [];
+        this._portraitBusy = false;
+        this.requestRoomPortraits();
+    }
+
+    // ── AI portrait helpers ──
+
+    _npcTexKey(name) {
+        return 'portrait_' + name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() + '_ai';
+    }
+
+    requestRoomPortraits() {
+        const apiKey = this.registry.get('apiKey');
+        if (!apiKey) return;
+
+        const API = 'http://localhost:8081';
+        const theme = storyState.theme || 'cyberpunk';
+        const npcs = this.roomSpec.npcs || [];
+        const enemies = this.roomSpec.enemies || [];
+
+        for (const n of npcs) {
+            const key = this._npcTexKey(n.name || n.id);
+            if (this.textures.exists(key)) continue;
+            this._portraitQueue.push({
+                key, name: n.name || n.id, role: 'npc',
+                description: n.description || n.emotion || '', color: n.color || '',
+                theme, apiKey, api: API,
+            });
+        }
+        for (const e of enemies) {
+            if (storyState.npcsDefeated.includes(e.id) || storyState.npcsSpared.includes(e.id)) continue;
+            const key = this._npcTexKey(e.name || e.id);
+            if (this.textures.exists(key)) continue;
+            this._portraitQueue.push({
+                key, name: e.name || e.id, role: 'enemy',
+                description: e.description || '', color: e.color || '',
+                theme, apiKey, api: API,
+            });
+        }
+        this._processPortraitQueue();
+    }
+
+    async _processPortraitQueue() {
+        if (this._portraitBusy || !this._portraitQueue.length) return;
+        this._portraitBusy = true;
+        const job = this._portraitQueue.shift();
+        try {
+            const res = await fetch(`${job.api}/api/generate-bustup`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    api_key: job.apiKey, name: job.name, theme: job.theme,
+                    role: job.role, description: job.description, color: job.color,
+                }),
+            });
+            if (res.ok) {
+                const data = await res.json();
+                if (data.portrait_url) {
+                    await this._loadTexUrl(job.key, `${job.api}${data.portrait_url}`);
+                }
+            }
+        } catch (err) {
+            console.warn(`[portrait] ${job.name}:`, err);
+        }
+        this._portraitBusy = false;
+        this._processPortraitQueue();
+    }
+
+    _loadTexUrl(key, url) {
+        return new Promise(resolve => {
+            if (this.textures.exists(key)) { resolve(); return; }
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => { this.textures.addImage(key, img); resolve(); };
+            img.onerror = () => resolve();
+            img.src = url;
+        });
+    }
+
+    // ── Portrait display ──
+
+    showPortrait(npcName) {
+        const soulColor = Phaser.Display.Color.HexStringToColor(storyState.soulColor || '#ff0000').color;
+        const all = [
+            this.dlg.portraitGlow, this.dlg.portraitBg,
+            this.dlg.portraitBorder, this.dlg.portrait, this.dlg.portraitSlash
+        ];
+
+        let texKey, borderColor;
+        if (npcName) {
+            const npcEntry = Object.values(this.npcDataMap).find(e => e.data?.name === npcName);
+            const npcColor = npcEntry?.data?.color
+                ? Phaser.Display.Color.HexStringToColor(npcEntry.data.color).color : 0xaaaaff;
+            const aiKey = this._npcTexKey(npcName);
+            texKey = this.textures.exists(aiKey) ? aiKey : 'portrait_npc';
+            borderColor = npcColor;
+
+            this.dlg.portrait.setTexture(texKey)
+                .setDisplaySize(this._PW - 6, this._PH - 6);
+            if (texKey === 'portrait_npc') this.dlg.portrait.setTint(npcColor);
+            else this.dlg.portrait.clearTint();
+        } else {
+            const aiKey = 'portrait_player_ai';
+            texKey = this.textures.exists(aiKey) ? aiKey : 'portrait_player';
+            borderColor = soulColor;
+
+            this.dlg.portrait.setTexture(texKey)
+                .setDisplaySize(this._PW - 6, this._PH - 6);
+            if (texKey === 'portrait_player') this.dlg.portrait.setTint(soulColor);
+            else this.dlg.portrait.clearTint();
+        }
+
+        this.dlg.portraitBorder.setStrokeStyle(3, borderColor);
+        this.dlg.portraitSlash.setFillStyle(borderColor, 0.6);
+        this.dlg.portraitGlow.setFillStyle(borderColor, 0.06);
+
+        all.forEach(o => o.setVisible(true));
+        this.dlg.portrait.setAlpha(0).setX(this._pCX - 30);
+        this.tweens.add({
+            targets: this.dlg.portrait,
+            alpha: 1, x: this._pCX, duration: 220, ease: 'Back.easeOut'
+        });
+    }
+
+    hidePortrait() {
+        [this.dlg.portraitGlow, this.dlg.portraitBg, this.dlg.portraitBorder,
+         this.dlg.portrait, this.dlg.portraitSlash].forEach(o => o.setVisible(false));
     }
 
     showDialogue(npcName, lines, choices, onChoiceSelect, onEnd) {
@@ -639,6 +847,7 @@ export default class GameScene extends Phaser.Scene {
         this.dlg.bg.setVisible(true); this.dlg.bgGlow.setVisible(true);
         this.dlg.arrow.setVisible(false); this.dlg.choiceCursor.setVisible(false);
         this.dlg.choiceTexts.forEach(t => t.setVisible(false).setText(''));
+        this.showPortrait(npcName);
         if (npcName) {
             this.dlg.nameBg.setSize(npcName.length * 9 + 16, 16).setVisible(true);
             this.dlg.nameText.setText(npcName).setVisible(true);
@@ -699,6 +908,7 @@ export default class GameScene extends Phaser.Scene {
         Object.values(this.dlg).forEach(v => { if (v?.setVisible) v.setVisible(false); });
         if (Array.isArray(this.dlg.choiceTexts)) this.dlg.choiceTexts.forEach(t => t.setVisible(false));
         this.tweens.killTweensOf(this.dlg.arrow); this.dlg.arrow?.setAlpha(1);
+        this.hidePortrait();
         const cb = this.dlgState.onEnd;
         this.dlgState = { lines: [], lineIdx: 0, choices: [], choiceIdx: 0, showingChoices: false, typing: false, displayedText: '', fullText: '', charTimer: null, npcName: '', onChoiceSelect: null, onEnd: null };
         this.mode = 'explore'; if (cb) cb();
@@ -708,15 +918,20 @@ export default class GameScene extends Phaser.Scene {
     startNPCDialogue(npcData) {
         storyState.meetNPC(npcData.id);
         this.playSound('interact');
+        this.npcTalkDepth = 0;
 
-        // Add "Browse wares" choice for merchants
-        let choices = [...(npcData.initial_choices || [])];
+        let choices = [...(npcData.initial_choices || [])].slice(0, 3);
         if (npcData.shop_inventory?.length) {
-            choices = [{ id: '__shop__', text: '🛒 Browse wares' }, ...choices];
+            choices = [{ id: '__shop__', text: '🛒 Browse wares' }, ...choices.slice(0, 2)];
         }
+        choices.push({ id: '__leave__', text: '👋 Leave' });
 
-        this.showDialogue(npcData.name, npcData.initial_dialogue || ['...'], choices,
+        const lines = (npcData.initial_dialogue || ['...']).slice(0, 3)
+            .map(l => typeof l === 'string' && l.length > 120 ? l.slice(0, 117) + '...' : l);
+
+        this.showDialogue(npcData.name, lines, choices,
             (choice) => {
+                if (choice.id === '__leave__') { this.endDialogue(); return; }
                 if (choice.id === '__shop__') { this.openShop(npcData); return; }
                 this.handleNPCChoice(npcData, choice);
             }, null
@@ -724,6 +939,7 @@ export default class GameScene extends Phaser.Scene {
     }
 
     async handleNPCChoice(npcData, choice) {
+        this.npcTalkDepth = (this.npcTalkDepth || 0) + 1;
         this.playSound('interact');
         this.dlg.text.setText('  . . .').setVisible(true);
         this.dlg.choiceTexts.forEach(t => t.setVisible(false));
@@ -740,8 +956,21 @@ export default class GameScene extends Phaser.Scene {
             this.applyEffects(result.effects);
             this.updateHUD();
 
-            this.showDialogue(npcData.name, result.dialogue || ['...'], result.choices || [],
-                result.choices?.length ? (ch) => this.handleNPCChoice(npcData, ch) : null,
+            let dialogue = (result.dialogue || ['...']).slice(0, 3);
+            dialogue = dialogue.map(l => typeof l === 'string' && l.length > 120 ? l.slice(0, 117) + '...' : l);
+
+            let choices = (result.choices || []).slice(0, 3);
+
+            if (this.npcTalkDepth >= 5) choices = [];
+
+            const hasChoices = choices.length > 0;
+            if (hasChoices) choices.push({ id: '__leave__', text: '👋 Leave' });
+
+            this.showDialogue(npcData.name, dialogue, choices,
+                hasChoices ? (ch) => {
+                    if (ch.id === '__leave__') { this.endDialogue(); return; }
+                    this.handleNPCChoice(npcData, ch);
+                } : null,
                 () => { if (result.effects?.trigger_combat) { const enemy = this.roomSpec.enemies?.find(e => e.id === result.effects.trigger_combat); if (enemy) this.startCombat(enemy); }}
             );
         } catch (err) {
@@ -944,13 +1173,85 @@ export default class GameScene extends Phaser.Scene {
 
     startCombat(enemyData) {
         this.transitioning = true;
-        this.cameras.main.shake(300, 0.02);
-        this.time.delayedCall(400, () => {
-            this.cameras.main.fadeOut(400);
-            this.cameras.main.once('camerafadeoutcomplete', () => {
-                this.scene.start('CombatScene', { enemy: enemyData, roomSpec: this.roomSpec, entryDirection: this.entryDirection });
+        this.mode = 'cutscene';
+        this.player.setVelocity(0);
+
+        const cutsceneClient = this.registry.get('cutsceneClient');
+        const cutscenePlayer = this.registry.get('cutscenePlayer');
+        const W = this.scale.width, H = this.scale.height;
+
+        const launchCombat = () => {
+            this.cameras.main.shake(300, 0.02);
+            this.time.delayedCall(400, () => {
+                this.cameras.main.fadeOut(400);
+                this.cameras.main.once('camerafadeoutcomplete', () => {
+                    this.scene.start('CombatScene', {
+                        enemy: enemyData, roomSpec: this.roomSpec,
+                        entryDirection: this.entryDirection,
+                    });
+                });
             });
-        });
+        };
+
+        if (!cutsceneClient?.ready || !cutscenePlayer) {
+            launchCombat();
+            return;
+        }
+
+        const key = `boss_intro_${enemyData.id}`;
+
+        const overlay = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0).setDepth(50);
+        const eName = this.add.text(W / 2, H / 2 - 10, enemyData.name || 'Enemy', {
+            fontFamily: '"Press Start 2P"', fontSize: '14px', color: '#ff4444',
+            shadow: { offsetX: 0, offsetY: 0, color: '#ff0000', blur: 12, fill: true },
+        }).setOrigin(0.5).setDepth(51).setAlpha(0);
+        const sub = this.add.text(W / 2, H / 2 + 20, '⚔ Preparing battle...', {
+            fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#888888',
+        }).setOrigin(0.5).setDepth(51).setAlpha(0);
+
+        this.tweens.add({ targets: overlay, alpha: 0.85, duration: 400 });
+        this.tweens.add({ targets: eName, alpha: 1, duration: 600, delay: 200 });
+        this.tweens.add({ targets: sub, alpha: 1, duration: 400, delay: 500 });
+
+        const cleanup = () => { overlay.destroy(); eName.destroy(); sub.destroy(); };
+
+        const ctx = {
+            enemy_name: enemyData.name, enemy_color: enemyData.color || '',
+            room_name: this.roomSpec.name || '', room_mood: this.roomSpec.mood || '',
+        };
+        cutsceneClient.preload([
+            { cache_key: key, trigger_type: 'boss_intro', context: ctx },
+            { cache_key: `boss_victory_${enemyData.id}`, trigger_type: 'boss_outcome_victory', context: ctx },
+            { cache_key: `boss_spare_${enemyData.id}`, trigger_type: 'boss_outcome_spare', context: ctx },
+        ]).catch(() => {});
+
+        const pollMs = 2500;
+
+        const poll = () => {
+            cutsceneClient.checkCache(key).then(cached => {
+                if (cached?.status === 'complete' && cached.video_url) {
+                    sub.setText('🎬 Playing cinematic...');
+                    this.time.delayedCall(300, () => {
+                        cleanup();
+                        cutscenePlayer.play(cached.video_url).then(() => {
+                            this.cameras.main.shake(300, 0.02);
+                            this.time.delayedCall(400, launchCombat);
+                        });
+                    });
+                } else if (cached?.status === 'error') {
+                    cleanup();
+                    launchCombat();
+                } else {
+                    if (cached?.status === 'generating_video') sub.setText('🎬 Rendering cinematic...');
+                    else if (cached?.status === 'generating') sub.setText('🎬 Building scene...');
+                    else if (cached?.status === 'waiting_rate_limit') sub.setText('⏳ Queued for render...');
+                    else if (!cached || cached.status === 'not_found' || cached.status === 'queued') sub.setText('⏳ Preparing cinematic...');
+                    this.time.delayedCall(pollMs, poll);
+                }
+            }).catch(() => { this.time.delayedCall(pollMs, poll); });
+        };
+
+        this.time.delayedCall(800, poll);
     }
 
     onExit(player, zone) {
@@ -965,7 +1266,16 @@ export default class GameScene extends Phaser.Scene {
         this.cameras.main.flash(200, 255, 255, 255);
         this.cameras.main.once('cameraflashcomplete', () => {
             this.cameras.main.fadeOut(400);
-            this.cameras.main.once('camerafadeoutcomplete', () => { this.scene.start('TransitionScene', { trigger, entryDirection: entryDir }); });
+            this.cameras.main.once('camerafadeoutcomplete', () => {
+                this.scene.start('TransitionScene', {
+                    trigger,
+                    entryDirection: entryDir,
+                    exitDirection: exit.direction,
+                    exitLabel: exit.label || '',
+                    roomName: this.roomSpec.name || '',
+                    roomMood: this.roomSpec.mood || '',
+                });
+            });
         });
     }
 

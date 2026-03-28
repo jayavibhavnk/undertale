@@ -123,19 +123,21 @@ ${STORY_STRUCTURE}
 GAME RULES:
 1. Return ONLY valid JSON — never prose, markdown, or explanation
 2. Maintain narrative consistency — reference previous rooms, NPCs, choices, and quest progress
-3. NPCs have DISTINCT personalities through SHORT dialogue (1-3 lines)
-4. Each room needs 2-4 NPCs with meaningful dialogue choices (2-3 choices each)
+3. NPCs have DISTINCT personalities through VERY SHORT dialogue (1-2 lines, under 80 chars each)
+4. Each room needs 2-4 NPCs with meaningful dialogue choices (2-3 choices max, under 30 chars each)
 5. At least 1 NPC per room should have a quest OR shop (alternate between rooms)
 6. Enemies have unique ACT options (2-3 per enemy) — these should be creative and theme-appropriate
 7. ACT effects: "weaken" reduces enemy ATK, "spare_progress" moves toward spare condition, "heal_self" heals player, "none" just flavor
 8. Items serve purposes: keys unlock doors, consumables heal, weapons/armor boost stats
-9. The world reacts to player's moral alignment and quest progress
+9. The world reacts to player's moral alignment, soul trait, and quest progress
 10. Keep y > 0.8 clear for player spawn. All coords 0.0-1.0
 11. Include 4-8 decorations per room for visual atmosphere
 12. Currency is "${t.currency}"
 13. Use the DECORATION TYPES listed for this theme
 14. Enemies give XP rewards (15-60 based on difficulty)
-15. Make quest objectives achievable within 1-3 rooms`;
+15. Make quest objectives achievable within 1-3 rooms
+16. The player has a SOUL TRAIT (in story_context). NPCs may occasionally reference it — e.g. sensing the player's bravery or patience. Weave it subtly into dialogue.
+17. The player's chosen enemy_presets should bias which enemy types appear`;
     }
 
     async callGemini(userMessage) {
@@ -212,8 +214,8 @@ ${JSON.stringify(storyContext, null, 1)}
 
 Return JSON:
 {
-  "dialogue": ["Line 1","Line 2 (max 3)"],
-  "choices": [{"id":"id","text":"text"}],
+  "dialogue": ["Line 1","Line 2"],
+  "choices": [{"id":"id","text":"Short text"}],
   "effects": {
     "give_item": null or {"id":"id","name":"Name","type":"consumable|quest_item|weapon|armor|key","color":"#hex","description":"desc","effect":null,"slot":null,"bonus":0},
     "take_item": null or "item_id",
@@ -226,7 +228,13 @@ Return JSON:
     "add_quest": null or {"id":"id","title":"Title","description":"desc","objective":"type:target","reward":{"xp":30,"gold":20,"item":null}}
   }
 }
-Empty choices [] = conversation ends. Keep dialogue SHORT and in-character.`;
+
+STRICT RULES:
+- dialogue: MAX 2 lines, each under 80 characters. Be punchy.
+- choices: MAX 2-3. Keep choice text under 30 characters.
+- Return choices: [] to END the conversation. Most exchanges should end after 1-2 replies.
+- Do NOT create open-ended loops. Conversations should resolve quickly.
+- If the player is just chatting, wrap it up in 1 reply with choices: [].`;
 
         return await this.callGemini(prompt);
     }

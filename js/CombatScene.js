@@ -481,6 +481,43 @@ export default class CombatScene extends Phaser.Scene {
     }
 
     // --- OUTCOMES ---
+    playOutcomeCutscene(cacheKey, triggerType, then) {
+        const cutsceneClient = this.registry.get('cutsceneClient');
+        const cutscenePlayer = this.registry.get('cutscenePlayer');
+        if (!cutsceneClient?.ready || !cutscenePlayer) {
+            then();
+            return;
+        }
+        this.phase = 'cutscene';
+        this.menuSoul.setVisible(false);
+        this.combatText.setText('Loading cinematic...').setColor('#888888');
+
+        const ctx = {
+            enemy_name: this.enemyData.name,
+            room_name: this.returnRoom?.name || '',
+        };
+        cutsceneClient.preload([
+            { cache_key: cacheKey, trigger_type: triggerType, context: ctx },
+        ]).catch(() => {});
+
+        const pollMs = 2500;
+        const poll = () => {
+            cutsceneClient.checkCache(cacheKey).then(cached => {
+                if (cached?.status === 'complete' && cached.video_url) {
+                    this.combatText.setText('🎬 Playing cinematic...');
+                    cutscenePlayer.play(cached.video_url).then(then);
+                } else if (cached?.status === 'error') {
+                    then();
+                } else {
+                    if (cached?.status === 'generating_video') this.combatText.setText('🎬 Rendering aftermath...');
+                    else if (cached?.status === 'waiting_rate_limit') this.combatText.setText('⏳ Queued...');
+                    this.time.delayedCall(pollMs, poll);
+                }
+            }).catch(() => { this.time.delayedCall(pollMs, poll); });
+        };
+        poll();
+    }
+
     victory() {
         this.phase = 'text';
         storyState.defeatEnemy(this.enemyData.id);
@@ -502,7 +539,10 @@ export default class CombatScene extends Phaser.Scene {
             this.cameras.main.flash(300, 255, 255, 100);
         }
 
-        this.textCallback = () => this.endCombat('victory');
+        this.textCallback = () => {
+            this.playOutcomeCutscene(`boss_victory_${this.enemyData.id}`,
+                'boss_outcome_victory', () => this.endCombat('victory'));
+        };
     }
 
     spare() {
@@ -515,7 +555,10 @@ export default class CombatScene extends Phaser.Scene {
 
         this.combatText.setText(txt);
         this.updatePlayerHP();
-        this.textCallback = () => this.endCombat('spared');
+        this.textCallback = () => {
+            this.playOutcomeCutscene(`boss_spare_${this.enemyData.id}`,
+                'boss_outcome_spare', () => this.endCombat('spared'));
+        };
     }
 
     gameOver() {

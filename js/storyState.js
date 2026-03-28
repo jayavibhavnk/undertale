@@ -2,6 +2,15 @@ const storyState = {
     theme: null,
     playerName: 'Wanderer',
 
+    // Character identity (persists across reset)
+    soulColor: '#ff0000',
+    soulTrait: 'Determination',
+    characterPresetId: null,
+    characterPhotoUrl: null,
+    enemyPresetIds: [],
+    playerPortraitUrl: null,
+    playerSpriteSheetUrl: null,
+
     // Stats
     hp: 20, maxHp: 20,
     atk: 5, def: 2,
@@ -35,6 +44,19 @@ const storyState = {
 
     // Reputation
     reputation: { kills: 0, spares: 0, quests_done: 0 },
+
+    setCharacterIdentity({ name, soulColor, soulTrait, characterPresetId,
+                           characterPhotoUrl, enemyPresetIds, playerPortraitUrl,
+                           playerSpriteSheetUrl }) {
+        if (name) this.playerName = name;
+        if (soulColor) this.soulColor = soulColor;
+        if (soulTrait) this.soulTrait = soulTrait;
+        if (characterPresetId !== undefined) this.characterPresetId = characterPresetId;
+        if (characterPhotoUrl !== undefined) this.characterPhotoUrl = characterPhotoUrl;
+        if (enemyPresetIds) this.enemyPresetIds = enemyPresetIds;
+        if (playerPortraitUrl !== undefined) this.playerPortraitUrl = playerPortraitUrl;
+        if (playerSpriteSheetUrl !== undefined) this.playerSpriteSheetUrl = playerSpriteSheetUrl;
+    },
 
     reset(theme) {
         this.theme = theme;
@@ -192,6 +214,11 @@ const storyState = {
         return {
             theme: this.theme,
             chapter: this.chapter,
+            player_name: this.playerName,
+            soul_trait: this.soulTrait,
+            soul_color: this.soulColor,
+            character_preset: this.characterPresetId,
+            enemy_presets: this.enemyPresetIds,
             level: this.level,
             hp: this.hp, max_hp: this.maxHp,
             atk: this.getATK(), def: this.getDEF(),

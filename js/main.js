@@ -1,18 +1,32 @@
 import BootScene from './BootScene.js';
-import ThemeSelectScene from './ThemeSelectScene.js';
+import IntroSequenceScene from './IntroSequenceScene.js';
 import GameScene from './GameScene.js';
 import CombatScene from './CombatScene.js';
 import TransitionScene from './TransitionScene.js';
 import { GeminiClient } from './gemini.js';
+import { CutsceneClient, CutscenePlayer } from './cutsceneClient.js';
 import storyState from './storyState.js';
+import { runCharacterCreation } from './CharacterCreate.js';
 
 let game = null;
 
-function initGame(apiKey, model) {
+function initGame(apiKey, model, characterData) {
     if (game) return;
 
-    document.getElementById('setup-screen').style.display = 'none';
+    document.getElementById('character-create-screen').style.display = 'none';
     document.getElementById('game-container').style.display = 'block';
+
+    storyState.reset(characterData.theme);
+    storyState.setCharacterIdentity({
+        name: characterData.name,
+        soulColor: characterData.soulColor,
+        soulTrait: characterData.soulTrait,
+        characterPresetId: characterData.characterPresetId,
+        characterPhotoUrl: characterData.characterPhotoUrl,
+        enemyPresetIds: characterData.enemyPresetIds,
+        playerPortraitUrl: characterData.playerPortraitUrl,
+        playerSpriteSheetUrl: characterData.playerSpriteSheetUrl,
+    });
 
     const config = {
         type: Phaser.AUTO,
@@ -24,7 +38,7 @@ function initGame(apiKey, model) {
             default: 'arcade',
             arcade: { gravity: { y: 0 }, debug: false }
         },
-        scene: [BootScene, ThemeSelectScene, TransitionScene, GameScene, CombatScene],
+        scene: [BootScene, IntroSequenceScene, TransitionScene, GameScene, CombatScene],
         input: {
             keyboard: {
                 capture: [
@@ -42,9 +56,17 @@ function initGame(apiKey, model) {
 
     game = new Phaser.Game(config);
 
-    const client = new GeminiClient(apiKey, model);
-    game.registry.set('geminiClient', client);
+    const gemini = new GeminiClient(apiKey, model);
+    gemini.setTheme(characterData.theme);
+
+    const cutscene = new CutsceneClient();
+    const player = new CutscenePlayer();
+
+    game.registry.set('geminiClient', gemini);
+    game.registry.set('cutsceneClient', cutscene);
+    game.registry.set('cutscenePlayer', player);
     game.registry.set('storyState', storyState);
+    game.registry.set('apiKey', apiKey);
 
     setTimeout(() => {
         const canvas = document.querySelector('#game-container canvas');
@@ -53,7 +75,7 @@ function initGame(apiKey, model) {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
-    document.getElementById('start-btn').addEventListener('click', () => {
+    document.getElementById('start-btn').addEventListener('click', async () => {
         const key = document.getElementById('api-key').value.trim();
         if (!key) {
             const inp = document.getElementById('api-key');
@@ -62,7 +84,12 @@ document.addEventListener('DOMContentLoaded', () => {
             return;
         }
         const model = document.getElementById('model-select').value;
-        initGame(key, model);
+
+        document.getElementById('setup-screen').style.display = 'none';
+
+        const characterData = await runCharacterCreation();
+
+        initGame(key, model, characterData);
     });
 
     document.getElementById('api-key').addEventListener('keydown', (e) => {

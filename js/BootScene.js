@@ -1,3 +1,5 @@
+import storyState from './storyState.js';
+
 export default class BootScene extends Phaser.Scene {
     constructor() { super('BootScene'); }
 
@@ -11,7 +13,8 @@ export default class BootScene extends Phaser.Scene {
         this.generateInteractable();
         this.generateCombatAssets();
         this.generateUI();
-        this.scene.start('ThemeSelectScene');
+        this.generatePortraitFrames();
+        this.scene.start('IntroSequenceScene');
     }
 
     generatePlayerSprites() {
@@ -181,35 +184,68 @@ export default class BootScene extends Phaser.Scene {
     }
 
     generateCombatAssets() {
+        const soulHex = storyState.soulColor || '#ff0000';
+        const soulInt = Phaser.Display.Color.HexStringToColor(soulHex).color;
+
         const g = this.make.graphics({ add: false });
-        // Soul heart
-        g.fillStyle(0xff0000);
+        g.fillStyle(soulInt);
         g.fillCircle(6, 5, 5); g.fillCircle(14, 5, 5);
         g.fillTriangle(1, 7, 10, 18, 19, 7);
         g.generateTexture('soul', 20, 20);
         g.clear();
-        // Projectile circle
+
         g.fillStyle(0xffffff); g.fillCircle(4, 4, 4);
         g.generateTexture('bullet_circle', 8, 8);
         g.clear();
-        // Projectile diamond
+
         g.fillStyle(0xffffff);
         g.fillTriangle(4, 0, 0, 4, 4, 8); g.fillTriangle(4, 0, 8, 4, 4, 8);
         g.generateTexture('bullet_diamond', 8, 8);
         g.clear();
-        // Particle
+
         g.fillStyle(0xffffff); g.fillRect(0, 0, 4, 4);
         g.generateTexture('particle', 4, 4);
         g.destroy();
     }
 
     generateUI() {
+        const soulHex = storyState.soulColor || '#ff0000';
+        const soulInt = Phaser.Display.Color.HexStringToColor(soulHex).color;
+
         const g = this.make.graphics({ add: false });
-        // HP heart
-        g.fillStyle(0xff0000);
+        g.fillStyle(soulInt);
         g.fillCircle(4, 3, 3); g.fillCircle(10, 3, 3);
         g.fillTriangle(1, 5, 7, 12, 13, 5);
         g.generateTexture('hp_heart', 14, 14);
         g.destroy();
+    }
+
+    generatePortraitFrames() {
+        const W = 128, H = 160;
+
+        const pg = this.make.graphics({ add: false });
+        pg.fillStyle(0x181828); pg.fillRect(0, 0, W, H);
+        pg.fillStyle(0x553311); pg.fillRect(30, 6, 68, 30);
+        pg.fillStyle(0xffcc88); pg.fillRect(28, 24, 72, 52);
+        pg.fillStyle(0x000000);
+        pg.fillRect(44, 42, 10, 10); pg.fillRect(72, 42, 10, 10);
+        pg.fillStyle(0xffbb77); pg.fillRect(56, 56, 16, 6);
+        pg.fillStyle(0x4466ff); pg.fillRect(22, 76, 84, 52);
+        pg.fillStyle(0x3855dd); pg.fillRect(34, 76, 8, 52);
+        pg.fillStyle(0x3322aa); pg.fillRect(28, 128, 28, 24); pg.fillRect(72, 128, 28, 24);
+        pg.generateTexture('portrait_player', W, H);
+        pg.destroy();
+
+        const ng = this.make.graphics({ add: false });
+        ng.fillStyle(0x181828); ng.fillRect(0, 0, W, H);
+        ng.fillStyle(0xaaaaaa); ng.fillRect(36, 10, 56, 24);
+        ng.fillStyle(0xdddddd); ng.fillRect(30, 26, 68, 48);
+        ng.fillStyle(0x000000);
+        ng.fillRect(46, 40, 10, 10); ng.fillRect(72, 40, 10, 10);
+        ng.fillStyle(0xcccccc); ng.fillRect(56, 58, 16, 6);
+        ng.fillStyle(0xbbbbbb); ng.fillRect(24, 74, 80, 54);
+        ng.fillStyle(0x999999); ng.fillRect(30, 128, 28, 24); ng.fillRect(70, 128, 28, 24);
+        ng.generateTexture('portrait_npc', W, H);
+        ng.destroy();
     }
 }

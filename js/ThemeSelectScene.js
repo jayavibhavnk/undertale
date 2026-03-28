@@ -115,11 +115,128 @@ export default class ThemeSelectScene extends Phaser.Scene {
         if (gemini) gemini.setTheme(theme.id);
 
         this.cameras.main.flash(300, color.r, color.g, color.b);
-        this.cameras.main.once('cameraflashcomplete', () => {
-            this.cameras.main.fadeOut(400, 0, 0, 0);
+
+        const cutscene = this.registry.get('cutsceneClient');
+        const apiKey = this.registry.get('apiKey');
+
+        if (cutscene && apiKey) {
+            this.startCharacterInit(cutscene, apiKey, theme);
+        } else {
+            this.cameras.main.once('cameraflashcomplete', () => {
+                this.cameras.main.fadeOut(400, 0, 0, 0);
+                this.cameras.main.once('camerafadeoutcomplete', () => {
+                    this.scene.start('TransitionScene', { trigger: null });
+                });
+            });
+        }
+    }
+
+    async startCharacterInit(cutscene, apiKey, theme) {
+        const W = this.scale.width, H = this.scale.height;
+
+        this.cards.forEach(c => { c.bg.setAlpha(0.2); c.nameText.setAlpha(0.2); c.descText.setAlpha(0.2); });
+        this.soul.setVisible(false);
+
+        const initBg = this.add.rectangle(W / 2, H / 2, W, H, 0x000000, 0.85).setDepth(20);
+        const initTitle = this.add.text(W / 2, H / 2 - 60, 'INITIALIZING AI DIRECTOR', {
+            fontFamily: '"Press Start 2P"', fontSize: '10px', color: '#ffffff'
+        }).setOrigin(0.5).setDepth(21);
+
+        const statusText = this.add.text(W / 2, H / 2 - 20, 'Creating character spec...', {
+            fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#888888'
+        }).setOrigin(0.5).setDepth(21);
+
+        const barBg = this.add.rectangle(W / 2, H / 2 + 10, 300, 12, 0x222222).setStrokeStyle(2, 0x444444).setDepth(21);
+        const barFill = this.add.rectangle(W / 2 - 148, H / 2 + 10, 0, 8, 0xffff00).setOrigin(0, 0.5).setDepth(21);
+        const pctText = this.add.text(W / 2, H / 2 + 30, '0%', {
+            fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#444444'
+        }).setOrigin(0.5).setDepth(21);
+
+        const hint = this.add.text(W / 2, H / 2 + 60, 'Generating master sheet + scene anchor...', {
+            fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#555555'
+        }).setOrigin(0.5).setDepth(21);
+
+        const skipBtn = this.add.text(W / 2, H / 2 + 90, '[ ENTER to skip ]', {
+            fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#444444'
+        }).setOrigin(0.5).setDepth(21);
+
+        let skipped = false;
+        const skipKey = this.input.keyboard.addKey(Phaser.Input.Keyboard.KeyCodes.ENTER);
+
+        const STATUS_LABELS = {
+            creating_spec: 'Creating character spec...',
+            generating_master_sheet: 'Generating master reference sheet...',
+            generating_anchor: 'Generating scene anchor...',
+            building_package: 'Building video package...',
+            ready: 'Ready!',
+            error: 'Error — skipping cutscene init',
+        };
+
+        const proceed = () => {
+            this.cameras.main.fadeOut(500, 0, 0, 0);
             this.cameras.main.once('camerafadeoutcomplete', () => {
                 this.scene.start('TransitionScene', { trigger: null });
             });
+        };
+
+        try {
+            await cutscene.init(apiKey, theme.id, storyState.playerName);
+            await cutscene.waitForInit((s) => {
+                if (skipped) return;
+                statusText.setText(STATUS_LABELS[s.status] || s.status);
+                const p = s.progress || 0;
+                barFill.setSize(296 * (p / 100), 8);
+                pctText.setText(`${p}%`);
+                if (s.status === 'generating_master_sheet') hint.setText('This takes ~20 seconds...');
+                if (s.status === 'generating_anchor') hint.setText('Almost there...');
+            }, 300000);
+
+            if (skipped) return;
+
+            statusText.setText('Generating opening cutscene...');
+            hint.setText('The AI Director is preparing your world...');
+            barFill.setSize(0, 8);
+            pctText.setText('0%');
+
+            const firstRoomKey = `${cutscene.sessionId}_first_room`;
+            const cutscenePlayer = this.registry.get('cutscenePlayer');
+
+            const result = await cutscene.getOrWait(firstRoomKey, 120000, (s) => {
+                if (skipped || !s) return;
+                const p = s.progress || 0;
+                barFill.setSize(296 * (p / 100), 8);
+                pctText.setText(`${p}%`);
+                if (s.status === 'waiting_rate_limit') hint.setText('Waiting for video slot...');
+                if (s.status === 'generating_video') hint.setText('Veo is rendering your world...');
+            });
+
+            if (skipped) return;
+
+            if (result?.status === 'complete' && result.video_url && cutscenePlayer) {
+                statusText.setText('Playing opening...');
+                barFill.setSize(296, 8);
+                pctText.setText('100%');
+                await new Promise(r => this.time.delayedCall(400, r));
+                await cutscenePlayer.play(result.video_url);
+            } else {
+                statusText.setText('AI Director ready!');
+                barFill.setSize(296, 8);
+                pctText.setText('100%');
+            }
+            hint.setText('');
+            this.time.delayedCall(400, proceed);
+
+        } catch (err) {
+            console.error('Character init failed:', err);
+            statusText.setText('Init failed — continuing without cutscenes');
+            hint.setText(String(err).slice(0, 60));
+            this.time.delayedCall(1500, proceed);
+        }
+
+        skipKey.on('down', () => {
+            if (skipped) return;
+            skipped = true;
+            proceed();
         });
     }
 }

@@ -6,26 +6,34 @@ const TIPS = {
     space: ['Stars drift past the viewport...', 'The station hums with static...', 'Oxygen levels nominal...', 'Strange signals from sector 7...']
 };
 
+const CUTSCENE_TIPS = {
+    cyberpunk: ['Rendering neon skyline...', 'Compositing holographic overlays...', 'Veo is painting your story...'],
+    medieval: ['Forging the next chapter...', 'The oracle weaves your fate...', 'Veo conjures your destiny...'],
+    space: ['Scanning deep space visuals...', 'Rendering stellar phenomena...', 'Veo charts your course...'],
+};
+
 export default class TransitionScene extends Phaser.Scene {
     constructor() { super('TransitionScene'); }
 
     init(data) {
         this.trigger = data.trigger || null;
         this.entryDirection = data.entryDirection || 'bottom';
+        this.exitDirection = data.exitDirection || '';
+        this.exitLabel = data.exitLabel || '';
+        this.roomName = data.roomName || '';
+        this.roomMood = data.roomMood || '';
     }
 
     create() {
         const W = this.scale.width, H = this.scale.height;
         this.cameras.main.setBackgroundColor('#000000');
 
-        // Pulsing soul heart
         this.soul = this.add.image(W / 2, H / 2 - 50, 'soul').setScale(1.8);
         this.tweens.add({
             targets: this.soul, scaleX: 2.2, scaleY: 2.2, alpha: 0.5,
             duration: 700, yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
         });
 
-        // Status text
         const theme = storyState.theme || 'cyberpunk';
         const tips = TIPS[theme] || TIPS.cyberpunk;
         const tip = tips[Math.floor(Math.random() * tips.length)];
@@ -34,7 +42,6 @@ export default class TransitionScene extends Phaser.Scene {
             fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#555555'
         }).setOrigin(0.5);
 
-        // Loading bar background
         const barW = 260, barH = 10;
         const barX = (W - barW) / 2, barY = H / 2 + 35;
 
@@ -43,27 +50,23 @@ export default class TransitionScene extends Phaser.Scene {
 
         this.barFill = this.add.rectangle(barX + 2, barY + 2, 0, barH, 0xffff00)
             .setOrigin(0, 0);
-
         this.barGlow = this.add.rectangle(barX + 2, barY + 2, 0, barH, 0xffff44, 0.3)
             .setOrigin(0, 0);
-
         this.barMaxW = barW - 4;
         this.barProgress = 0;
 
-        // Percentage text
         this.pctText = this.add.text(W / 2, barY + barH + 14, '0%', {
             fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#333333'
         }).setOrigin(0.5);
 
-        // "Generating..." label
         this.genText = this.add.text(W / 2, barY - 14, 'Generating world...', {
             fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#666666'
         }).setOrigin(0.5);
 
-        // Animate the bar with faked progress (fast at first, slows down)
-        this.fakeProgress();
+        this.cutsceneLabel = this.add.text(W / 2, barY + barH + 32, '', {
+            fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#444466'
+        }).setOrigin(0.5);
 
-        // Cycle through tips
         this.time.addEvent({
             delay: 2500, loop: true,
             callback: () => {
@@ -77,19 +80,18 @@ export default class TransitionScene extends Phaser.Scene {
         });
 
         this.cameras.main.fadeIn(200);
-        this.loadRoom();
+        this.loadRoomAndCutscene();
     }
 
-    fakeProgress() {
+    fakeProgress(maxTarget = 93) {
         const stages = [
-            { target: 30, duration: 800 },
-            { target: 55, duration: 1500 },
-            { target: 75, duration: 2500 },
-            { target: 88, duration: 4000 },
-            { target: 93, duration: 6000 },
+            { target: Math.min(30, maxTarget), duration: 800 },
+            { target: Math.min(55, maxTarget), duration: 1500 },
+            { target: Math.min(75, maxTarget), duration: 2500 },
+            { target: Math.min(88, maxTarget), duration: 4000 },
+            { target: Math.min(maxTarget, 93), duration: 6000 },
         ];
-
-        let chain = this.tweens.chain({
+        this.tweens.chain({
             targets: this,
             tweens: stages.map(s => ({
                 barProgress: s.target,
@@ -105,12 +107,8 @@ export default class TransitionScene extends Phaser.Scene {
         this.barFill.setSize(w, 10);
         this.barGlow.setSize(w, 10);
         this.pctText.setText(`${Math.floor(this.barProgress)}%`);
-
-        // Color shift: yellow -> green as it progresses
         const r = Math.floor(255 - (this.barProgress / 100) * 200);
-        const g = 255;
-        const b = Math.floor((this.barProgress / 100) * 50);
-        this.barFill.setFillStyle(Phaser.Display.Color.GetColor(r, g, b));
+        this.barFill.setFillStyle(Phaser.Display.Color.GetColor(r, 255, Math.floor((this.barProgress / 100) * 50)));
     }
 
     finishBar() {
@@ -125,7 +123,7 @@ export default class TransitionScene extends Phaser.Scene {
         });
     }
 
-    async loadRoom() {
+    async loadRoomAndCutscene() {
         const gemini = this.registry.get('geminiClient');
         if (!gemini) {
             this.genText.setText('ERROR').setColor('#ff4444');
@@ -133,57 +131,160 @@ export default class TransitionScene extends Phaser.Scene {
             return;
         }
 
-        try {
-            const context = storyState.toContext();
-            const roomSpec = await gemini.generateRoom(context, this.trigger);
+        const cutsceneClient = this.registry.get('cutsceneClient');
+        const cutscenePlayer = this.registry.get('cutscenePlayer');
+        const hasCutscene = cutsceneClient?.ready && this.trigger;
 
-            storyState.currentRoomData = roomSpec;
-            storyState.chapter++;
+        this.fakeProgress(hasCutscene ? 50 : 93);
 
-            this.finishBar();
-            this.time.delayedCall(600, () => {
-                this.cameras.main.fadeOut(500, 0, 0, 0);
-                this.cameras.main.once('camerafadeoutcomplete', () => {
-                    this.scene.start('GameScene', {
-                        roomSpec,
-                        entryDirection: this.entryDirection
-                    });
-                });
-            });
-        } catch (err) {
-            console.error('Gemini room generation failed:', err);
-            this.genText.setText('Retrying...').setColor('#ff8844');
-            this.statusText.setText('Connection hiccup, trying again...').setColor('#ff8844');
+        let roomSpec = null;
+        let cutsceneVideoUrl = null;
 
-            this.time.delayedCall(2000, async () => {
-                try {
-                    const context = storyState.toContext();
-                    const roomSpec = await gemini.generateRoom(context, this.trigger);
-                    storyState.currentRoomData = roomSpec;
-                    storyState.chapter++;
+        const roomPromise = this.generateRoom(gemini);
+        let cutscenePromise = Promise.resolve(null);
 
-                    this.finishBar();
-                    this.time.delayedCall(600, () => {
-                        this.cameras.main.fadeOut(500, 0, 0, 0);
-                        this.cameras.main.once('camerafadeoutcomplete', () => {
-                            this.scene.start('GameScene', { roomSpec, entryDirection: this.entryDirection });
-                        });
-                    });
-                } catch (err2) {
-                    console.error('Retry failed:', err2);
-                    this.genText.setText('FAILED').setColor('#ff4444');
-                    this.statusText.setText('Could not reach Gemini').setColor('#ff4444');
-                    this.pctText.setVisible(false);
-
-                    this.add.text(this.scale.width / 2, this.scale.height / 2 + 80, '[ ENTER to retry ]', {
-                        fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#888888'
-                    }).setOrigin(0.5);
-
-                    this.input.keyboard.once('keydown-ENTER', () => {
-                        this.scene.restart({ trigger: this.trigger, entryDirection: this.entryDirection });
-                    });
-                }
+        if (hasCutscene) {
+            this.cutsceneLabel.setText('🎬 Generating cinematic cutscene...');
+            cutscenePromise = this.generateCutscene(cutsceneClient).catch(err => {
+                console.warn('Cutscene generation failed:', err);
+                return null;
             });
         }
+
+        try {
+            roomSpec = await roomPromise;
+        } catch (err) {
+            console.error('Room generation failed:', err);
+            return this.handleRoomError(gemini);
+        }
+
+        storyState.currentRoomData = roomSpec;
+        storyState.chapter++;
+
+        if (hasCutscene) {
+            this.genText.setText('Waiting for cutscene...');
+            this.fakeProgressSlow();
+            const csTips = CUTSCENE_TIPS[storyState.theme] || CUTSCENE_TIPS.cyberpunk;
+
+            this.cutsceneTipTimer = this.time.addEvent({
+                delay: 3000, loop: true,
+                callback: () => {
+                    const t = csTips[Math.floor(Math.random() * csTips.length)];
+                    this.cutsceneLabel.setText(`🎬 ${t}`);
+                }
+            });
+
+            cutsceneVideoUrl = await cutscenePromise;
+
+            if (this.cutsceneTipTimer) this.cutsceneTipTimer.destroy();
+            this.cutsceneLabel.setText('');
+        }
+
+        this.finishBar();
+
+        if (cutsceneVideoUrl && cutscenePlayer) {
+            this.genText.setText('Playing cutscene...');
+            this.time.delayedCall(400, async () => {
+                await cutscenePlayer.play(cutsceneVideoUrl);
+                this.transitionToGame(roomSpec);
+            });
+        } else {
+            this.time.delayedCall(600, () => this.transitionToGame(roomSpec));
+        }
+    }
+
+    async generateRoom(gemini) {
+        const context = storyState.toContext();
+        return await gemini.generateRoom(context, this.trigger);
+    }
+
+    async generateCutscene(cutsceneClient) {
+        const context = storyState.toContext();
+        try {
+            const result = await cutsceneClient.requestCutscene(
+                this.trigger || 'The adventure begins',
+                context,
+                this.exitDirection,
+                this.exitLabel,
+                this.roomName,
+                this.roomMood,
+            );
+            if (!result?.scene_id) return null;
+
+            const status = await cutsceneClient.waitForCutscene(
+                result.scene_id,
+                (s) => {
+                    if (s.progress && this.barProgress < 90) {
+                        const mapped = 50 + (s.progress / 100) * 45;
+                        if (mapped > this.barProgress) {
+                            this.barProgress = mapped;
+                            this.updateBar();
+                        }
+                    }
+                },
+                180000
+            );
+
+            if (status.status === 'complete' && status.video_url) {
+                return status.video_url;
+            }
+            return null;
+        } catch (err) {
+            console.warn('Cutscene request error:', err);
+            return null;
+        }
+    }
+
+    fakeProgressSlow() {
+        this.tweens.killTweensOf(this);
+        this.tweens.chain({
+            targets: this,
+            tweens: [
+                { barProgress: 60, duration: 8000, ease: 'Sine.easeOut', onUpdate: () => this.updateBar() },
+                { barProgress: 70, duration: 15000, ease: 'Sine.easeOut', onUpdate: () => this.updateBar() },
+                { barProgress: 80, duration: 25000, ease: 'Sine.easeOut', onUpdate: () => this.updateBar() },
+                { barProgress: 88, duration: 40000, ease: 'Sine.easeOut', onUpdate: () => this.updateBar() },
+                { barProgress: 93, duration: 60000, ease: 'Sine.easeOut', onUpdate: () => this.updateBar() },
+            ]
+        });
+    }
+
+    transitionToGame(roomSpec) {
+        this.cameras.main.fadeOut(500, 0, 0, 0);
+        this.cameras.main.once('camerafadeoutcomplete', () => {
+            this.scene.start('GameScene', {
+                roomSpec,
+                entryDirection: this.entryDirection
+            });
+        });
+    }
+
+    async handleRoomError(gemini) {
+        this.genText.setText('Retrying...').setColor('#ff8844');
+        this.statusText.setText('Connection hiccup, trying again...').setColor('#ff8844');
+
+        this.time.delayedCall(2000, async () => {
+            try {
+                const context = storyState.toContext();
+                const roomSpec = await gemini.generateRoom(context, this.trigger);
+                storyState.currentRoomData = roomSpec;
+                storyState.chapter++;
+                this.finishBar();
+                this.time.delayedCall(600, () => this.transitionToGame(roomSpec));
+            } catch (err2) {
+                console.error('Retry failed:', err2);
+                this.genText.setText('FAILED').setColor('#ff4444');
+                this.statusText.setText('Could not reach Gemini').setColor('#ff4444');
+                this.pctText.setVisible(false);
+
+                this.add.text(this.scale.width / 2, this.scale.height / 2 + 80, '[ ENTER to retry ]', {
+                    fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#888888'
+                }).setOrigin(0.5);
+
+                this.input.keyboard.once('keydown-ENTER', () => {
+                    this.scene.restart({ trigger: this.trigger, entryDirection: this.entryDirection });
+                });
+            }
+        });
     }
 }
