@@ -1,0 +1,13 @@
+{
+  "character_id": "spa_1c7bd99d",
+  "character_name": "yo",
+  "world_type": "space",
+  "subject_images": [
+    "/Users/dhruvshetty/dev/glitchhacks/undertale/generated_assets/master_sheets/spa_1c7bd99d_master_sheet.png",
+    "/Users/dhruvshetty/dev/glitchhacks/undertale/generated_assets/video_refs/spa_1c7bd99d_scene_anchor.png"
+  ],
+  "subject_prompt": "Persistent story game protagonist.\nCharacter name: yo\nWorld: space\n\nIdentity requirements:\n- same face and facial identity, same hairstyle\n- same body proportions, same costume archetype\n- same signature accessories, same overall silhouette\n\nStyle: clean sci-fi, spacefaring, modular suit design, technical materials\nOutfit profile: flight suit or modular jacket, utility belt, reinforced boots, subtle luminous accents\nProps: access card, data pad, energy canister\nCustomization:",
+  "style_prompt": "Cinematic game cutscene style.\nStylized but consistent with the approved master character sheet.\nReadable silhouette, clean visual storytelling, strong composition, game-trailer quality.\nWorld tone: space.\nEnvironment hint: spaceship interiors, stations, distant planets",
+  "negative_prompt": "do not change age drastically; do not change face shape; do not change hair color unless requested; do not replace outfit with a different archetype; do not introduce extra limbs or malformed hands; do not alter glasses or signature accessories; do not drift into a different art style mid-generation; do not change the character into a different person; do not alter costume colors significantly; do not add random accessories; do not introduce visual drift between shots; do not make the character look older or younger; do not change the art direction dramatically",
+  "scene_anchor_image": "/Users/dhruvshetty/dev/glitchhacks/undertale/generated_assets/video_refs/spa_1c7bd99d_scene_anchor.png"
+}

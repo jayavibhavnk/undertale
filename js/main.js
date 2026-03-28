@@ -31,8 +31,8 @@ function initGame(apiKey, model, characterData) {
 
     const config = {
         type: Phaser.AUTO,
-        width: 640,
-        height: 480,
+        width: 960,
+        height: 640,
         parent: 'game-container',
         pixelArt: true,
         physics: {

@@ -8,7 +8,7 @@ ITEM TYPES: data_chip, keycard, neural_implant, med_kit, hacking_tool, stim_pack
 DECORATION TYPES: neon_sign, pipe, vent, puddle, hologram, cable, screen, graffiti, dumpster, steam_vent
 WALL_STYLE: panels (horizontal metal panels with glowing seams)
 FLOOR_STYLE: neon_grid (dark tiles with cyan grid lines)
-COLORS - bg: #08081e #0a0a28 #0c0820 | walls: #181840 #1c1c48 | accents: #00ffff #ff00ff #00ff88 #ff6600`,
+COLORS - bg: #1a1440 #221850 #181245 | walls: #2e2868 #383278 | accents: #00ffff #ff00ff #00ff88 #ff6600`,
         currency: 'credits'
     },
     medieval: {
@@ -20,7 +20,7 @@ ITEM TYPES: potion, key, scroll, enchanted_gem, holy_water, herb, antidote, torc
 DECORATION TYPES: torch_bracket, barrel, chain, banner, cobweb, skull, bookshelf, armor_stand, moss, crack
 WALL_STYLE: bricks (stone brick pattern)
 FLOOR_STYLE: stone (irregular stone tiles)
-COLORS - bg: #14100a #0c1408 #18100c | walls: #3a2a1a #2a3020 | accents: #ffaa22 #44dd44 #ff4444 #ffd700`,
+COLORS - bg: #2a4018 #304a1e #283c16 | walls: #6a5438 #7a6444 | accents: #ffaa22 #44dd44 #ff4444 #ffd700`,
         currency: 'gold'
     },
     space: {
@@ -32,7 +32,7 @@ ITEM TYPES: fuel_cell, star_map, alien_artifact, plasma_charge, oxygen_tank, rep
 DECORATION TYPES: console, cable_run, warning_light, viewport, specimen_tube, crate_stack, antenna, sparking_wire
 WALL_STYLE: metal (riveted metal panels)
 FLOOR_STYLE: grating (metal floor grating with underlight)
-COLORS - bg: #060612 #080818 #0a0616 | walls: #1a2a3e #182030 | accents: #4488ff #44ffaa #ff4444 #ffffff`,
+COLORS - bg: #121830 #161e38 #141a34 | walls: #344868 #3e5278 | accents: #4488ff #44ffaa #ff4444 #ffffff`,
         currency: 'credits'
     }
 };
@@ -48,7 +48,7 @@ const ROOM_SCHEMA = `{
   "name": "Room Name (2-4 words)",
   "narration": "One vivid atmospheric sentence",
   "mood": "calm|tense|eerie|mysterious|dangerous|peaceful",
-  "bg_color": "#hex_very_dark",
+  "bg_color": "#hex_dark_themed (rich and visible, not near-black)",
   "wall_color": "#hex",
   "decorations": [{"type":"string_from_theme_list","x":0.0-1.0,"y":0.0-1.0,"color":"#hex","text":"optional_for_signs"}],
   "obstacles": [{"x":0.0-1.0,"y":0.0-1.0,"w":0.05-0.2,"h":0.05-0.2,"color":"#hex","type":"rock|crystal|pillar|crate|rubble|machine|barrel|debris"}],
@@ -190,14 +190,14 @@ ${SHOP_SCHEMA}
 
 THIS ROOM MUST HAVE:
 - 2-4 NPCs (at least one merchant OR quest-giver)
-- 4-8 decorations for atmosphere (use theme decoration types)
+- 8-14 decorations for a rich, detailed environment (use ALL theme decoration types generously — neon_sign, screen, hologram, pipe, vent, puddle for cyberpunk; torch_bracket, barrel, banner, bookshelf, armor_stand, moss, cobweb for medieval; console, viewport, warning_light, specimen_tube, antenna, cable_run, crate_stack for space)
 - 3-5 obstacles
 - 1-3 exits
 - 0-2 items
 - 0-1 interactables
 - 0-1 enemies (more likely after chapter 3)
 - Each enemy needs 2-3 creative ACT options with effects
-- Dark bg colors, vivid accent colors
+- Rich themed bg colors (not near-black), vivid accent colors
 - Narration should set the mood immediately`;
 
         const spec = await this.callGemini(prompt);

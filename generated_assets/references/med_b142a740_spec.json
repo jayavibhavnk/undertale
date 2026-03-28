@@ -1,0 +1,72 @@
+{
+  "character_id": "med_b142a740",
+  "character_name": "dh2",
+  "world_type": "medieval",
+  "character_source": "template",
+  "template_name": "medieval_protagonist_01",
+  "uploaded_image_path": null,
+  "visual_dna": {
+    "facial_features": "preserve identity consistently across all generated assets",
+    "body_proportions": "maintain same body proportions and silhouette",
+    "hair": "keep hairstyle consistent unless explicitly changed by story logic",
+    "accessories": "preserve signature accessories across all views and scenes"
+  },
+  "palette_preferences": {
+    "consistency_priority": "high",
+    "extract_palette_from_reference_if_available": false,
+    "allow_world_specific_accents": true
+  },
+  "outfit_profile": {
+    "default_outfit_elements": [
+      "tunic or cloak",
+      "belted waist",
+      "boots",
+      "small metal or leather accessories"
+    ],
+    "must_preserve_core_silhouette": true
+  },
+  "prop_profile": {
+    "default_props": [
+      "journal",
+      "coin pouch",
+      "small blade or trinket"
+    ],
+    "important_story_props": []
+  },
+  "style_profile": {
+    "style_keywords": [
+      "fantasy",
+      "cloth and leather",
+      "ornamental details",
+      "grounded medieval silhouette"
+    ],
+    "environment_hint": "castle halls, stone paths, torch-lit interiors",
+    "target_render_mix": "2D gameplay sprites + 3D cutscene-ready character identity"
+  },
+  "prompt_lock": [
+    "maintain exact facial identity across all outputs",
+    "maintain consistent body proportions",
+    "maintain consistent hairstyle",
+    "maintain consistent costume details",
+    "maintain consistent accessories and props unless changed intentionally",
+    "preserve the same character identity in 2D sprites and 3D reference outputs"
+  ],
+  "negative_constraints": [
+    "do not change age drastically",
+    "do not change face shape",
+    "do not change hair color unless requested",
+    "do not replace outfit with a different archetype",
+    "do not introduce extra limbs or malformed hands",
+    "do not alter glasses or signature accessories",
+    "do not drift into a different art style mid-generation"
+  ],
+  "raw_customization_text": "",
+  "output_plan": {
+    "master_sheet": true,
+    "sprite_sheet": true,
+    "expression_sheet": true,
+    "prop_sheet": true,
+    "scene_anchor": true,
+    "video_ready_refs": true
+  }
+}

@@ -13,13 +13,13 @@ body {
 
 #game-wrapper {
     position: relative;
-    width: 640px;
-    height: 480px;
+    width: 960px;
+    height: 640px;
 }
 
 #setup-screen {
-    width: 640px;
-    height: 480px;
+    width: 960px;
+    height: 640px;
     background: #0a0a1a;
     border: 3px solid #fff;
     display: flex;
@@ -168,8 +168,8 @@ button {
    ═══════════════════════════════════════════════════════════════ */
 
 #character-create-screen {
-    width: 640px;
-    height: 480px;
+    width: 960px;
+    height: 640px;
     background: #0a0a0a;
     border: 3px solid #fff;
     display: flex;
