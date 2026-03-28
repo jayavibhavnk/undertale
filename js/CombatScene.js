@@ -1,6 +1,6 @@
 import storyState from './storyState.js';
 
-const BOX_W = 360, BOX_H = 170, SOUL_SPEED = 200;
+const SOUL_SPEED = 200;
 
 export default class CombatScene extends Phaser.Scene {
     constructor() { super('CombatScene'); }
@@ -18,7 +18,7 @@ export default class CombatScene extends Phaser.Scene {
         const music = this.registry.get('musicManager');
         if (music) {
             const theme = storyState.theme || 'cyberpunk';
-            music.play(`combat_${theme}`, 1000);
+            music.playCombat(theme, this.enemyData.name, this.returnRoom?.mood);
         }
 
         this.enemyHp = this.enemyData.hp;
@@ -31,9 +31,19 @@ export default class CombatScene extends Phaser.Scene {
         this.subMenuIndex = 0;
         this.subMenuOpen = null;
 
-        // Box bounds
+        // Scaled layout constants
+        const BOX_W = Math.round(W * 0.375);
+        const BOX_H = Math.round(H * 0.265);
+        this.BOX_W = BOX_W;
+        this.BOX_H = BOX_H;
+
+        const enemySpriteY = Math.round(H * 0.10);
+        const enemyNameY = Math.round(H * 0.17);
+        const enemyHpY = Math.round(H * 0.20);
+        const combatTextY = Math.round(H * 0.24);
+
         this.boxX = (W - BOX_W) / 2;
-        this.boxY = 170;
+        this.boxY = Math.round(H * 0.265);
         this.boxR = this.boxX + BOX_W;
         this.boxB = this.boxY + BOX_H;
 
@@ -51,23 +61,23 @@ export default class CombatScene extends Phaser.Scene {
 
         // Enemy display
         const eColor = Phaser.Display.Color.HexStringToColor(this.enemyData.color || '#ff4444').color;
-        this.enemyGlow = this.add.ellipse(W / 2, 80, 80, 40, eColor, 0.1);
+        this.enemyGlow = this.add.ellipse(W / 2, enemySpriteY + 15, 80, 40, eColor, 0.1);
         this.tweens.add({
             targets: this.enemyGlow, alpha: 0.2, scaleX: 1.2, scaleY: 1.2,
             duration: 1000, yoyo: true, repeat: -1
         });
-        this.enemySprite = this.add.image(W / 2, 65, 'enemy').setScale(2.8).setTint(eColor);
+        this.enemySprite = this.add.image(W / 2, enemySpriteY, 'enemy').setScale(2.8).setTint(eColor);
 
-        this.enemyNameText = this.add.text(W / 2, 110, this.enemyData.name || 'Enemy', {
+        this.enemyNameText = this.add.text(W / 2, enemyNameY, this.enemyData.name || 'Enemy', {
             fontFamily: '"Press Start 2P"', fontSize: '11px', color: '#ffffff'
         }).setOrigin(0.5);
 
         // Enemy HP bar
-        this.add.rectangle(W / 2, 130, 204, 14, 0x222222).setStrokeStyle(2, 0x444444);
-        this.enemyHpBar = this.add.rectangle(W / 2 - 100, 130, 200, 10, 0x00ff00).setOrigin(0, 0.5);
+        this.add.rectangle(W / 2, enemyHpY, 204, 14, 0x222222).setStrokeStyle(2, 0x444444);
+        this.enemyHpBar = this.add.rectangle(W / 2 - 100, enemyHpY, 200, 10, 0x00ff00).setOrigin(0, 0.5);
 
         // Combat dialogue area (above box)
-        this.combatText = this.add.text(W / 2, 155, '', {
+        this.combatText = this.add.text(W / 2, combatTextY, '', {
             fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#aaaaaa',
             wordWrap: { width: BOX_W - 20 }
         }).setOrigin(0.5).setDepth(5);
@@ -85,30 +95,35 @@ export default class CombatScene extends Phaser.Scene {
         this.bullets = this.physics.add.group();
         this.physics.add.overlap(this.soul, this.bullets, this.onHit, null, this);
 
-        // Player info bar
+        // Player info bar — centered under box
         const infoY = this.boxB + 16;
-        this.add.text(20, infoY, storyState.playerName, {
+        const infoX = this.boxX;
+        this.add.text(infoX, infoY, storyState.playerName, {
             fontFamily: '"Press Start 2P"', fontSize: '9px', color: '#ffffff'
         });
-        this.add.text(20, infoY + 16, `LV ${storyState.level}`, {
+        this.add.text(infoX, infoY + 16, `LV ${storyState.level}`, {
             fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffff00'
         });
 
-        this.add.image(120, infoY + 8, 'hp_heart').setScale(0.8);
-        this.add.rectangle(140, infoY + 8, 102, 12, 0x333333);
-        this.hpBar = this.add.rectangle(90, infoY + 8, 100, 10, 0xffff00).setOrigin(0, 0.5);
-        this.hpText = this.add.text(195, infoY + 1, '', {
+        const hpStartX = infoX + 70;
+        this.add.image(hpStartX, infoY + 8, 'hp_heart').setScale(0.8);
+        this.add.rectangle(hpStartX + 20, infoY + 8, 102, 12, 0x333333);
+        this.hpBar = this.add.rectangle(hpStartX - 30, infoY + 8, 100, 10, 0xffff00).setOrigin(0, 0.5);
+        this.hpText = this.add.text(hpStartX + 75, infoY + 1, '', {
             fontFamily: '"Press Start 2P"', fontSize: '8px', color: '#ffffff'
         });
         this.updatePlayerHP();
 
-        // Menu buttons - FIGHT / ACT / ITEM / MERCY
+        // Menu buttons - FIGHT / ACT / ITEM / MERCY — evenly spaced centered on screen
         const menuY = infoY + 38;
         const labels = ['FIGHT', 'ACT', 'ITEM', 'MERCY'];
+        const menuTotalW = W * 0.6;
+        const menuStartX = (W - menuTotalW) / 2;
+        const menuSpacing = menuTotalW / labels.length;
         this.menuItems = [];
         labels.forEach((label, i) => {
-            const x = 50 + i * 150;
-            const bg = this.add.rectangle(x, menuY, 120, 22, 0x000000).setStrokeStyle(2, 0xff6600);
+            const x = menuStartX + menuSpacing * (i + 0.5);
+            const bg = this.add.rectangle(x, menuY, menuSpacing - 10, 22, 0x000000).setStrokeStyle(2, 0xff6600);
             const t = this.add.text(x, menuY, label, {
                 fontFamily: '"Press Start 2P"', fontSize: '10px', color: '#ffffff'
             }).setOrigin(0.5);
@@ -373,7 +388,7 @@ export default class CombatScene extends Phaser.Scene {
         this.turnCount++;
         this.combatText.setText('');
         this.soul.setVisible(true);
-        this.soul.setPosition(this.scale.width / 2, this.boxY + BOX_H / 2);
+        this.soul.setPosition(this.scale.width / 2, this.boxY + this.BOX_H / 2);
         this.menuSoul.setVisible(false);
         this.clearSubMenu();
 
@@ -398,17 +413,18 @@ export default class CombatScene extends Phaser.Scene {
 
     spawnBullets(type, speed, index, total) {
         const cx = this.scale.width / 2;
+        const bw = this.BOX_W, bh = this.BOX_H;
         switch (type) {
             case 'horizontal_sweep': {
                 const fromLeft = index % 2 === 0;
-                const y = this.boxY + 15 + ((index / total) * (BOX_H - 30));
+                const y = this.boxY + 15 + ((index / total) * (bh - 30));
                 const b = this.bullets.create(fromLeft ? this.boxX - 10 : this.boxR + 10, y, 'bullet_circle');
                 b.setTint(0xffffff); b.setVelocityX(fromLeft ? speed : -speed); b.body.setSize(6, 6);
                 break;
             }
             case 'vertical_rain': {
                 for (let i = 0; i < 3; i++) {
-                    const x = this.boxX + 15 + Math.random() * (BOX_W - 30);
+                    const x = this.boxX + 15 + Math.random() * (bw - 30);
                     const b = this.bullets.create(x, this.boxY - 10, 'bullet_diamond');
                     b.setTint(0x44aaff); b.setVelocityY(speed); b.body.setSize(6, 6);
                 }
@@ -424,7 +440,7 @@ export default class CombatScene extends Phaser.Scene {
                 const a = (index / total) * Math.PI * 4;
                 for (let i = 0; i < 2; i++) {
                     const angle = a + i * Math.PI;
-                    const b = this.bullets.create(cx, this.boxY + BOX_H / 2, 'bullet_circle');
+                    const b = this.bullets.create(cx, this.boxY + bh / 2, 'bullet_circle');
                     b.setTint(0xff66ff);
                     b.setVelocity(Math.cos(angle) * speed * 0.7, Math.sin(angle) * speed * 0.7);
                     b.body.setSize(6, 6);
@@ -433,9 +449,9 @@ export default class CombatScene extends Phaser.Scene {
             }
             case 'wave': {
                 for (let i = 0; i < 4; i++) {
-                    const y = this.boxY + 10 + (i * BOX_H / 4);
+                    const y = this.boxY + 10 + (i * bh / 4);
                     const gap = (Math.sin(index + i) + 1) * 0.3 + 0.2;
-                    if (Math.abs((y - this.boxY) / BOX_H - gap) > 0.15) {
+                    if (Math.abs((y - this.boxY) / bh - gap) > 0.15) {
                         const b = this.bullets.create(this.boxX - 5, y, 'bullet_circle');
                         b.setTint(0x44ff88); b.setVelocityX(speed); b.body.setSize(6, 6);
                     }
@@ -444,8 +460,8 @@ export default class CombatScene extends Phaser.Scene {
             }
             default: {
                 for (let i = 0; i < 2; i++) {
-                    const x = this.boxX + 10 + Math.random() * (BOX_W - 20);
-                    const y = this.boxY + 10 + Math.random() * (BOX_H - 20);
+                    const x = this.boxX + 10 + Math.random() * (bw - 20);
+                    const y = this.boxY + 10 + Math.random() * (bh - 20);
                     const b = this.bullets.create(x, y, 'bullet_circle');
                     b.setTint(0xffff44); b.setScale(0); b.body.setSize(6, 6);
                     this.tweens.add({
@@ -513,6 +529,10 @@ export default class CombatScene extends Phaser.Scene {
             if (Date.now() - startTime > maxWaitMs) { then(); return; }
             cutsceneClient.checkCache(cacheKey).then(cached => {
                 if (cached?.status === 'complete' && cached.video_url) {
+                    const outcomeLabel = triggerType.includes('spare')
+                        ? `Showed mercy to ${this.enemyData.name || 'the enemy'}`
+                        : `Defeated ${this.enemyData.name || 'the enemy'}!`;
+                    storyState.logCutscene(triggerType, cached.video_url, outcomeLabel);
                     this.combatText.setText('🎬 Playing cinematic...');
                     cutscenePlayer.play(cached.video_url).then(then);
                 } else if (cached?.status === 'error') {

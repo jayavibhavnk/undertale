@@ -1,0 +1,16 @@
+{
+  "scene_id": "cyb_8875ea75_boss_outcome_victory_54e71c",
+  "reference_images": [
+    "/Users/dhruvshetty/dev/glitchhacks/main-undertale/undertale/generated_assets/master_sheets/cyb_8875ea75_master_sheet.png",
+    "/Users/dhruvshetty/dev/glitchhacks/main-undertale/undertale/generated_assets/video_refs/cyb_8875ea75_scene_anchor.png"
+  ],
+  "scene_prompt": "Use the attached approved reference image(s) to preserve the same protagonist identity across the entire scene.\n\nPROTAGONIST\nPersistent story game protagonist.\nCharacter name: dh4\nWorld: cyberpunk\n\nIdentity requirements:\n- same face and facial identity, same hairstyle\n- same body proportions, same costume archetype\n- same signature accessories, same overall silhouette\n\nStyle: futuristic, neon-accented, techwear, high-contrast materials, sleek sci-fi\nOutfit profile: layered urban techwear, utility jacket or fitted top, combat or tactical pants, small glowing accessory\nProps: digital key, energy vial, wrist device\nCustomization:\n\nSTYLE\nCinematic game cutscene style.\nStylized but consistent with the approved master character sheet.\nReadable silhouette, clean visual storytelling, strong composition, game-trailer quality.\nWorld tone: cyberpunk.\nEnvironment hint: dense futuristic city, holograms, moody lighting\n\nNEGATIVE CONSTRAINTS\ndo not change age drastically; do not change face shape; do not change hair color unless requested; do not replace outfit with a different archetype; do not introduce extra limbs or malformed hands; do not alter glasses or signature accessories; do not drift into a different art style mid-generation; do not change the character into a different person; do not alter costume colors significantly; do not add random accessories; do not introduce visual drift between shots; do not make the character look older or younger; do not change the art direction dramatically\n\nSCENE TYPE: Victory Aftermath\nDURATION: 8 seconds\n\nThe protagonist has defeated \"Cyber Ninja\" in combat.\nThe enemy crumbles. Dust settles. The protagonist stands victorious.\nLocation: Sector 7 Hub\n\nCamera: wide shot of the aftermath, debris settling, dramatic lighting.\nSlow push-in on the protagonist catching their breath, triumphant.",
+  "trigger_type": "boss_outcome_victory",
+  "context": {
+    "enemy_name": "Cyber Ninja",
+    "enemy_color": "#00ffff",
+    "room_name": "Sector 7 Hub",
+    "room_mood": "tense"
+  },
+  "model_channel": "fast"
+}

@@ -47,10 +47,11 @@ PORTRAITS_DIR = ASSETS_DIR / "portraits"
 PRESETS_DIR = ASSETS_DIR / "presets"
 UPLOADS_DIR = ASSETS_DIR / "uploads"
 MUSIC_DIR = ASSETS_DIR / "music"
+BACKGROUNDS_DIR = ASSETS_DIR / "backgrounds"
 
 for d in [ASSETS_DIR, REFS_DIR, MASTER_SHEETS_DIR, VIDEO_REFS_DIR,
           SCENE_PACKAGES_DIR, VIDEOS_DIR, STORY_DIR, PORTRAITS_DIR,
-          PRESETS_DIR, UPLOADS_DIR, MUSIC_DIR]:
+          PRESETS_DIR, UPLOADS_DIR, MUSIC_DIR, BACKGROUNDS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 MODELS = {
@@ -866,9 +867,14 @@ def _queue_worker():
             scene_id = f"{spec.character_id}_{trigger_type}_{uuid.uuid4().hex[:6]}"
 
             ref_imgs = list(veo_pkg.get("subject_images", []))
-            anchor = veo_pkg.get("scene_anchor_image")
-            if anchor and anchor not in ref_imgs:
-                ref_imgs.append(anchor)
+            bg_img = context.get("background_image_path")
+            if bg_img and Path(bg_img).exists():
+                if bg_img not in ref_imgs:
+                    ref_imgs.insert(0, bg_img)
+            else:
+                anchor = veo_pkg.get("scene_anchor_image")
+                if anchor and anchor not in ref_imgs:
+                    ref_imgs.append(anchor)
 
             scene_pkg = {
                 "scene_id": scene_id,
@@ -945,6 +951,7 @@ class CutsceneRequest(BaseModel):
     exit_label: str = ""
     room_name: str = ""
     room_mood: str = ""
+    background_image: str = ""
 
 class PreloadItem(BaseModel):
     cache_key: str
@@ -1050,6 +1057,13 @@ def request_cutscene(req: CutsceneRequest):
     if sess["status"] != "ready":
         raise HTTPException(400, f"Session not ready: {sess['status']}")
 
+    bg_path = ""
+    if req.background_image:
+        bg_filename = req.background_image.split("/")[-1]
+        candidate = BACKGROUNDS_DIR / bg_filename
+        if candidate.exists():
+            bg_path = str(candidate)
+
     cache_key = f"legacy_{req.session_id}_{uuid.uuid4().hex[:6]}"
     _enqueue_preload(cache_key, req.session_id, "room_transition", {
         "current_room": req.room_name,
@@ -1058,6 +1072,7 @@ def request_cutscene(req: CutsceneRequest):
         "destination": req.exit_label,
         "theme": req.story_context.get("theme", "cyberpunk"),
         "chapter": req.story_context.get("chapter", 1),
+        "background_image_path": bg_path,
     })
     return {"scene_id": cache_key}
 
@@ -1401,6 +1416,139 @@ def get_presets(theme: str):
     return {"characters": chars, "enemies": enemies}
 
 
+SPRITES_DIR = ASSETS_DIR / "sprites"
+SPRITES_DIR.mkdir(parents=True, exist_ok=True)
+
+
+class SpriteRequest(BaseModel):
+    api_key: str
+    name: str = "NPC"
+    theme: str = "cyberpunk"
+    role: str = "npc"
+    description: str = ""
+    color: str = ""
+
+
+def _remove_dark_background(img, threshold=40):
+    """Make near-black pixels transparent so sprites don't have ugly black boxes."""
+    img = img.convert("RGBA")
+    pixels = img.load()
+    w, h = img.size
+    for y in range(h):
+        for x in range(w):
+            r, g, b, a = pixels[x, y]
+            if r < threshold and g < threshold and b < threshold:
+                pixels[x, y] = (r, g, b, 0)
+    return img
+
+
+@app.post("/api/generate-sprite")
+def generate_sprite(req: SpriteRequest):
+    """Generate a small pixel art character sprite using Nano Banana."""
+    safe_name = "".join(c if c.isalnum() else "_" for c in req.name).lower()
+    cache_key = f"{req.theme}_{req.role}_{safe_name}"
+    cached_path = SPRITES_DIR / f"{cache_key}_sprite.png"
+
+    if cached_path.exists():
+        return {"sprite_url": f"/api/assets/sprites/{cached_path.name}", "cached": True}
+
+    try:
+        client = genai.Client(api_key=req.api_key)
+        color_hint = f" with accent color {req.color}" if req.color else ""
+        desc_hint = f" ({req.description})" if req.description else ""
+        prompt = (
+            f"Create a single pixel art character sprite for a 2D RPG game. "
+            f"Character: {req.name}, a {req.role}{desc_hint} in a {req.theme} world{color_hint}. "
+            f"16-bit pixel art style, front-facing character sprite on a PURE BLACK #000000 background. "
+            f"Bright colorful character, no text, no UI elements. "
+            f"Single character only, centered in frame."
+        )
+        resp = client.models.generate_content(
+            model=MODELS["image_fast"],
+            contents=[prompt],
+            config=types.GenerateContentConfig(
+                response_modalities=["Image"],
+                image_config=types.ImageConfig(aspect_ratio="1:1", image_size="1K"),
+            ),
+        )
+        img = _extract_first_image(resp)
+        img = _remove_dark_background(img)
+        img.save(cached_path)
+        return {"sprite_url": f"/api/assets/sprites/{cached_path.name}", "cached": False}
+    except Exception as e:
+        raise HTTPException(500, f"Sprite generation failed: {e}")
+
+
+BACKGROUND_PROMPTS = {
+    "cyberpunk": (
+        "Top-down 2D pixel art game room interior, cyberpunk neon city style. "
+        "Dark purple and blue walls with glowing cyan and magenta neon strips. "
+        "Metal floor with grid pattern and neon reflections. "
+        "Neon signs, holographic displays, exposed pipes, steam vents, puddles reflecting neon light. "
+        "Dense atmospheric detail like a Stardew Valley room but cyberpunk themed. "
+        "16-bit pixel art style, rich saturated colors, moody neon lighting."
+    ),
+    "medieval": (
+        "Top-down 2D pixel art game room interior, medieval fantasy RPG style like Stardew Valley. "
+        "Warm stone brick walls with torches casting orange glow. "
+        "Cobblestone or wooden plank floor with wear marks. "
+        "Barrels, bookshelves, banners, armor stands, moss on walls, wooden crates. "
+        "Warm earthy palette with greens, browns, and golden torch light. "
+        "16-bit pixel art style, cozy and detailed like a classic SNES RPG."
+    ),
+    "space": (
+        "Top-down 2D pixel art game room interior, sci-fi space station style. "
+        "Metallic grey-blue walls with riveted panels and blinking status lights. "
+        "Metal grating floor with glowing blue conduit lines underneath. "
+        "Consoles, viewports showing stars, specimen tubes, warning stripes, cable runs. "
+        "Cool blue and teal palette with occasional warning orange and red lights. "
+        "16-bit pixel art style, atmospheric and detailed like a pixel art sci-fi game."
+    ),
+}
+
+class BackgroundRequest(BaseModel):
+    api_key: str
+    theme: str = "cyberpunk"
+    room_name: str = "Unknown Room"
+    mood: str = "mysterious"
+    narration: str = ""
+
+
+@app.post("/api/generate-background")
+def generate_background(req: BackgroundRequest):
+    """Generate a pixel art room background using Nano Banana (Gemini 3.1 Flash Image)."""
+    safe_name = "".join(c if c.isalnum() else "_" for c in req.room_name).lower()
+    cache_key = f"{req.theme}_{safe_name}"
+    cached_path = BACKGROUNDS_DIR / f"{cache_key}_bg.png"
+
+    if cached_path.exists():
+        return {"background_url": f"/api/assets/backgrounds/{cached_path.name}", "cached": True}
+
+    try:
+        client = genai.Client(api_key=req.api_key)
+        base_prompt = BACKGROUND_PROMPTS.get(req.theme, BACKGROUND_PROMPTS["cyberpunk"])
+        prompt = (
+            f"{base_prompt}\n\n"
+            f"Room name: {req.room_name}. Mood: {req.mood}. "
+            f"Scene context: {req.narration}\n"
+            f"Generate a complete room background with NO characters or people, "
+            f"only environment and props. The image should tile-friendly edges."
+        )
+        resp = client.models.generate_content(
+            model=MODELS["image_fast"],
+            contents=[prompt],
+            config=types.GenerateContentConfig(
+                response_modalities=["Image"],
+                image_config=types.ImageConfig(aspect_ratio="16:9", image_size="2K"),
+            ),
+        )
+        img = _extract_first_image(resp)
+        img.save(cached_path)
+        return {"background_url": f"/api/assets/backgrounds/{cached_path.name}", "cached": False}
+    except Exception as e:
+        raise HTTPException(500, f"Background generation failed: {e}")
+
+
 @app.get("/api/assets/{folder}/{filename}")
 def serve_asset(folder: str, filename: str):
     """Serve generated asset files (portraits, master sheets, etc.)."""
@@ -1409,6 +1557,8 @@ def serve_asset(folder: str, filename: str):
         "master_sheets": MASTER_SHEETS_DIR,
         "presets": PRESETS_DIR,
         "uploads": UPLOADS_DIR,
+        "backgrounds": BACKGROUNDS_DIR,
+        "sprites": SPRITES_DIR,
     }
     base = folder_map.get(folder)
     if not base:
@@ -1482,6 +1632,73 @@ def serve_music(filename: str):
         raise HTTPException(404, "Music not found")
     mime, _ = mimetypes.guess_type(str(fp))
     return FileResponse(fp, media_type=mime or "audio/wav")
+
+
+# ────────────────────────────────────────────────────────────
+# Game save / gallery / recap
+# ────────────────────────────────────────────────────────────
+
+GAMES_DIR = STORY_DIR
+
+
+@app.post("/api/save-game")
+def save_game(payload: dict):
+    """Save a completed game for the gallery / recap page."""
+    game_id = uuid.uuid4().hex[:10]
+    payload["game_id"] = game_id
+    payload["saved_at"] = time.time()
+
+    sid = payload.get("sessionId", "")
+    if sid:
+        with _cache_lock:
+            all_vids = []
+            for key, entry in video_cache.items():
+                if key.startswith(sid) and entry.get("status") == "complete" and entry.get("video_url"):
+                    all_vids.append({
+                        "cache_key": key,
+                        "video_url": entry["video_url"],
+                    })
+            payload["allSessionVideos"] = all_vids
+
+    fp = GAMES_DIR / f"{game_id}.json"
+    fp.write_text(json.dumps(payload, ensure_ascii=False, indent=2))
+    print(f"[save] Game saved: {game_id} — {payload.get('playerName', '?')}")
+    return {"game_id": game_id}
+
+
+@app.get("/api/games")
+def list_games():
+    """Return lightweight list of saved games for the gallery."""
+    games = []
+    for fp in sorted(GAMES_DIR.glob("*.json"), key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            data = json.loads(fp.read_text())
+            games.append({
+                "game_id": data.get("game_id", fp.stem),
+                "playerName": data.get("playerName", "Unknown"),
+                "theme": data.get("theme", "cyberpunk"),
+                "soulColor": data.get("soulColor", "#ff0000"),
+                "soulTrait": data.get("soulTrait", "Determination"),
+                "endingType": data.get("endingType", {}),
+                "roomCount": data.get("roomNumber", 0),
+                "maxRooms": data.get("maxRooms", 10),
+                "level": data.get("level", 1),
+                "portraitUrl": data.get("portraitUrl", ""),
+                "saved_at": data.get("saved_at", 0),
+            })
+        except Exception:
+            continue
+    return {"games": games[:50]}
+
+
+@app.get("/api/games/{game_id}")
+def get_game(game_id: str):
+    """Return full game data for the recap page."""
+    safe = "".join(c if c.isalnum() else "" for c in game_id)
+    fp = GAMES_DIR / f"{safe}.json"
+    if not fp.exists():
+        raise HTTPException(404, "Game not found")
+    return json.loads(fp.read_text())
 
 
 # ────────────────────────────────────────────────────────────

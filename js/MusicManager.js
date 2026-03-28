@@ -1,6 +1,7 @@
 /**
  * MusicManager — AI-generated background music via Google Lyria.
  * Uses Web Audio API for gapless looping + smooth crossfades.
+ * Generates unique, context-aware tracks for every room and event.
  * Singleton instance exported as default.
  */
 
@@ -13,16 +14,13 @@ const PROMPTS = {
     intro_medieval: `Dark orchestral fantasy music for a story narration. Instrumental only, no vocals. Low cello and viola sustain, distant ethereal choir pads, gentle harp arpeggios, solo oboe melody. Ancient, foreboding, mystical. Tempo: 60 BPM. Seamlessly loopable.`,
     intro_space: `Deep space ambient for a cinematic narration. Instrumental only, no vocals. Vast cosmic synth drones, distant radio static texture, ethereal shimmer pads, isolated piano notes with long reverb tails. Vast emptiness, isolation, wonder mixed with dread. Tempo: 55 BPM. Seamlessly loopable.`,
 
-    explore_cyberpunk_calm: `Chill lo-fi synthwave exploration music for a cyberpunk RPG. Instrumental only, no vocals. Relaxed electronic beats, warm detuned synth pads, soft sub-bass groove, muted neon-tinged melodies, vinyl crackle texture. Nighttime city wandering through neon rain. Tempo: 85 BPM. Seamlessly loopable game background music.`,
-    explore_cyberpunk_tense: `Tense cyberpunk ambient music. Instrumental only, no vocals. Dark pulsing analog synth, glitchy stutter percussion, ominous sub-bass, distant alarm-like tones, digital interference textures. Something is wrong. Surveillance, hidden danger. Tempo: 100 BPM. Seamlessly loopable.`,
-    explore_medieval_calm: `Peaceful medieval fantasy exploration music. Instrumental only, no vocals. Gentle acoustic lute picking, soft wooden flute melody, warm string pad, occasional harp glissando, birdsong texture. Cozy tavern warmth and countryside beauty. Tempo: 80 BPM. Seamlessly loopable game background music.`,
-    explore_medieval_tense: `Tense medieval dungeon music. Instrumental only, no vocals. Low string tremolo, distant tribal war drums, ominous monk choir whispers, sparse plucked dulcimer, wind howling. Dark stone corridors, ancient danger lurking. Tempo: 75 BPM. Seamlessly loopable.`,
-    explore_space_calm: `Calm space station ambient music. Instrumental only, no vocals. Gentle electronic hum, soft glowing synth pads, quiet computer beeps and chirps, floating arpeggio, subtle mechanical rhythm. Serene observation deck, stargazing. Tempo: 70 BPM. Seamlessly loopable game background music.`,
-    explore_space_tense: `Tense sci-fi corridor music. Instrumental only, no vocals. Metallic percussion hits, pulsing deep sub-bass, distorted radio signal fragments, eerie synthetic vocal-like tones, hull stress creaking. Something is aboard. Creeping dread. Tempo: 90 BPM. Seamlessly loopable.`,
+    loading_cyberpunk: `Atmospheric cyberpunk loading screen ambient. Instrumental only, no vocals. Slow pulsing neon-synth waves, quiet data-stream textures, soft bass drone, digital rain ambience. Anticipation building. Tempo: 65 BPM. Seamlessly loopable.`,
+    loading_medieval: `Mysterious medieval loading ambient. Instrumental only, no vocals. Soft wind through ancient halls, distant low bells, gentle string drone, faint whispered choir. The story unfolds. Tempo: 55 BPM. Seamlessly loopable.`,
+    loading_space: `Deep space loading ambient. Instrumental only, no vocals. Vast cosmic hum, soft electronic pulses, ship engine drone, distant stellar wind. Drifting between worlds. Tempo: 50 BPM. Seamlessly loopable.`,
 
-    combat_cyberpunk: `Intense cyberpunk battle music for an RPG fight. Instrumental only, no vocals. Aggressive driving synthwave, heavy distorted bass drops, fast glitchy breakbeat percussion, screaming lead synth riffs, adrenaline energy. Street fight in neon chaos. Tempo: 140 BPM. Seamlessly loopable.`,
-    combat_medieval: `Epic medieval battle music for an RPG fight. Instrumental only, no vocals. Full orchestra with thundering war drums, bold brass fanfares, urgent string ostinato, powerful choir chants. Clash of swords, desperate valor. Tempo: 135 BPM. Seamlessly loopable.`,
-    combat_space: `Intense sci-fi combat music for an RPG fight. Instrumental only, no vocals. Electronic orchestra hybrid, pulsing energy-beam synths, dramatic brass-like leads, rapid snare percussion, laser-effect arpeggios. Zero-gravity battle for survival. Tempo: 130 BPM. Seamlessly loopable.`,
+    ending_good: `Triumphant emotional RPG ending music. Instrumental only, no vocals. Soaring melody with warm strings, gentle piano, uplifting brass swell, soft choir pads. Victory, hope, a journey completed. Bittersweet but hopeful. Tempo: 80 BPM. Seamlessly loopable.`,
+    ending_bad: `Dark somber RPG ending music. Instrumental only, no vocals. Minor key, low cello solo, distant piano decay, mournful oboe, rain-like texture. Loss, regret, the world unchanged. Tempo: 55 BPM. Seamlessly loopable.`,
+    ending_neutral: `Reflective RPG ending music. Instrumental only, no vocals. Pensive piano melody, soft ambient pads, gentle acoustic guitar arpeggios, contemplative mood. The journey is over, but what was the cost? Tempo: 70 BPM. Seamlessly loopable.`,
 };
 
 const MOOD_PROMPT_FLAVOR = {
@@ -35,6 +33,9 @@ const MOOD_PROMPT_FLAVOR = {
     hopeful:    { energy: 'uplifting, bright', tempo: '90 BPM', feel: 'dawn breaking, new beginnings' },
     sad:        { energy: 'melancholic, somber', tempo: '60 BPM', feel: 'loss, bittersweet memories' },
     triumphant: { energy: 'victorious, grand', tempo: '120 BPM', feel: 'celebration, hard-won glory' },
+    dark:       { energy: 'ominous, oppressive', tempo: '70 BPM', feel: 'crushing darkness, despair closing in' },
+    whimsical:  { energy: 'playful, quirky', tempo: '95 BPM', feel: 'mischievous magic, lighthearted wonder' },
+    epic:       { energy: 'grand, sweeping', tempo: '105 BPM', feel: 'vast scale, destiny awaits' },
 };
 
 const THEME_INSTRUMENTS = {
@@ -43,20 +44,35 @@ const THEME_INSTRUMENTS = {
     space:     'cosmic synth drones, ethereal shimmer pads, distant radio signals, electronic hum, isolated piano',
 };
 
-function buildDynamicPrompt(theme, mood) {
+function buildRoomPrompt(theme, mood, roomName, roomDescription) {
     const flavor = MOOD_PROMPT_FLAVOR[mood] || MOOD_PROMPT_FLAVOR.mysterious;
     const instruments = THEME_INSTRUMENTS[theme] || THEME_INSTRUMENTS.cyberpunk;
-    return `${flavor.energy} RPG exploration music for a ${theme} world. Instrumental only, no vocals. `
-        + `Instruments: ${instruments}. `
+    let prompt = `${flavor.energy} RPG exploration music. Instrumental only, no vocals. `
+        + `Setting: ${theme} world`;
+    if (roomName) prompt += `, location "${roomName}"`;
+    if (roomDescription) prompt += ` — ${roomDescription.slice(0, 120)}`;
+    prompt += `. Instruments: ${instruments}. `
         + `Mood: ${flavor.feel}. Tempo: ${flavor.tempo}. `
         + `Seamlessly loopable game background music. High quality, cinematic.`;
+    return prompt;
+}
+
+function buildCombatPrompt(theme, enemyName, mood) {
+    const instruments = THEME_INSTRUMENTS[theme] || THEME_INSTRUMENTS.cyberpunk;
+    const intensity = mood === 'dangerous' ? 'extremely intense, relentless' : 'intense, driving';
+    let prompt = `${intensity} RPG battle music. Instrumental only, no vocals. `
+        + `Setting: ${theme} world. `;
+    if (enemyName) prompt += `Fighting "${enemyName}". `;
+    prompt += `Instruments: ${instruments}, with aggressive percussion and dramatic energy. `
+        + `Adrenaline-pumping, high stakes combat. Tempo: 135 BPM. `
+        + `Seamlessly loopable. High quality, cinematic.`;
+    return prompt;
 }
 
 export function getMusicKey(type, theme, mood) {
     if (type === 'menu') return 'menu';
     if (type === 'intro') return `intro_${theme}`;
-    if (type === 'combat') return `combat_${theme}`;
-    if (type === 'explore') return `explore_${theme}_${mood || 'calm'}`;
+    if (type === 'loading') return `loading_${theme}`;
     return null;
 }
 
@@ -69,6 +85,7 @@ class MusicManager {
         this.currentKey = null;
         this.bufferCache = {};
         this.pendingRequests = {};
+        this.dynamicPrompts = {};
         this.apiKey = null;
         this.volume = 0.30;
         this._stopped = false;
@@ -86,19 +103,22 @@ class MusicManager {
         if (this.ctx.state === 'suspended') this.ctx.resume();
     }
 
+    _resolvePrompt(cacheKey) {
+        if (PROMPTS[cacheKey]) return PROMPTS[cacheKey];
+        if (this.dynamicPrompts[cacheKey]) return this.dynamicPrompts[cacheKey];
+        return null;
+    }
+
     async _fetchBuffer(cacheKey) {
         if (this.bufferCache[cacheKey]) return this.bufferCache[cacheKey];
         if (this.pendingRequests[cacheKey]) return this.pendingRequests[cacheKey];
 
-        let prompt = PROMPTS[cacheKey];
-        if (!prompt) {
-            const parts = cacheKey.match(/^explore_(\w+)_(\w+)$/);
-            if (parts) prompt = buildDynamicPrompt(parts[1], parts[2]);
-        }
+        const prompt = this._resolvePrompt(cacheKey);
         if (!prompt || !this.apiKey) return null;
 
         const req = (async () => {
             try {
+                console.log(`[music] Generating: ${cacheKey}`);
                 const res = await fetch(`${API_BASE}/api/generate-music`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -112,6 +132,7 @@ class MusicManager {
                 const audio = await fetch(`${API_BASE}${data.music_url}`);
                 const buf = await this.ctx.decodeAudioData(await audio.arrayBuffer());
                 this.bufferCache[cacheKey] = buf;
+                console.log(`[music] Ready: ${cacheKey}${data.cached ? ' (cached)' : ' (fresh)'}`);
                 return buf;
             } catch (err) {
                 console.warn(`[music] ${cacheKey}:`, err);
@@ -133,6 +154,52 @@ class MusicManager {
         const buffer = await this._fetchBuffer(cacheKey);
         if (!buffer || this._stopped) return;
 
+        this._crossfadeTo(buffer, cacheKey, fadeMs);
+    }
+
+    playRoom(theme, mood, roomName, roomDescription, roomId) {
+        const key = `room_${(roomId || roomName || 'unknown').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30)}`;
+        if (!this.dynamicPrompts[key]) {
+            this.dynamicPrompts[key] = buildRoomPrompt(theme, mood, roomName, roomDescription);
+        }
+        this.play(key, 2500);
+        return key;
+    }
+
+    playCombat(theme, enemyName, mood) {
+        const safe = (enemyName || 'enemy').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+        const key = `combat_${theme}_${safe}`;
+        if (!this.dynamicPrompts[key]) {
+            this.dynamicPrompts[key] = buildCombatPrompt(theme, enemyName, mood);
+        }
+        this.play(key, 1000);
+        return key;
+    }
+
+    preloadRoom(theme, mood, roomName, roomDescription, roomId) {
+        const key = `room_${(roomId || roomName || 'unknown').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30)}`;
+        if (!this.dynamicPrompts[key]) {
+            this.dynamicPrompts[key] = buildRoomPrompt(theme, mood, roomName, roomDescription);
+        }
+        this._fetchBuffer(key);
+        return key;
+    }
+
+    preloadCombat(theme, enemyName, mood) {
+        const safe = (enemyName || 'enemy').replace(/[^a-zA-Z0-9]/g, '_').slice(0, 30);
+        const key = `combat_${theme}_${safe}`;
+        if (!this.dynamicPrompts[key]) {
+            this.dynamicPrompts[key] = buildCombatPrompt(theme, enemyName, mood);
+        }
+        this._fetchBuffer(key);
+        return key;
+    }
+
+    preload(cacheKey) {
+        if (cacheKey && this._resolvePrompt(cacheKey)) this._fetchBuffer(cacheKey);
+    }
+
+    _crossfadeTo(buffer, cacheKey, fadeMs) {
         const now = this.ctx.currentTime;
         const fadeSec = fadeMs / 1000;
 
@@ -181,10 +248,6 @@ class MusicManager {
         this.currentSource = null;
         this.currentGain = null;
         this.currentKey = null;
-    }
-
-    preload(cacheKey) {
-        if (cacheKey && PROMPTS[cacheKey]) this._fetchBuffer(cacheKey);
     }
 
     setVolume(v) {

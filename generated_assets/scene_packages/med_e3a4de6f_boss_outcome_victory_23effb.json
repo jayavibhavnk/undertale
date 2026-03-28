@@ -1,0 +1,16 @@
+{
+  "scene_id": "med_e3a4de6f_boss_outcome_victory_23effb",
+  "reference_images": [
+    "/Users/dhruvshetty/dev/glitchhacks/main-undertale/undertale/generated_assets/master_sheets/med_e3a4de6f_master_sheet.png",
+    "/Users/dhruvshetty/dev/glitchhacks/main-undertale/undertale/generated_assets/video_refs/med_e3a4de6f_scene_anchor.png"
+  ],
+  "scene_prompt": "Use the attached approved reference image(s) to preserve the same protagonist identity across the entire scene.\n\nPROTAGONIST\nPersistent story game protagonist.\nCharacter name: dhruv\nWorld: medieval\n\nIdentity requirements:\n- same face and facial identity, same hairstyle\n- same body proportions, same costume archetype\n- same signature accessories, same overall silhouette\n\nStyle: fantasy, cloth and leather, ornamental details, grounded medieval silhouette\nOutfit profile: tunic or cloak, belted waist, boots, small metal or leather accessories\nProps: journal, coin pouch, small blade or trinket\nCustomization:\n\nSTYLE\nCinematic game cutscene style.\nStylized but consistent with the approved master character sheet.\nReadable silhouette, clean visual storytelling, strong composition, game-trailer quality.\nWorld tone: medieval.\nEnvironment hint: castle halls, stone paths, torch-lit interiors\n\nNEGATIVE CONSTRAINTS\ndo not change age drastically; do not change face shape; do not change hair color unless requested; do not replace outfit with a different archetype; do not introduce extra limbs or malformed hands; do not alter glasses or signature accessories; do not drift into a different art style mid-generation; do not change the character into a different person; do not alter costume colors significantly; do not add random accessories; do not introduce visual drift between shots; do not make the character look older or younger; do not change the art direction dramatically\n\nSCENE TYPE: Victory Aftermath\nDURATION: 8 seconds\n\nThe protagonist has defeated \"Goblin Scout\" in combat.\nThe enemy crumbles. Dust settles. The protagonist stands victorious.\nLocation: Whispering Woods\n\nCamera: wide shot of the aftermath, debris settling, dramatic lighting.\nSlow push-in on the protagonist catching their breath, triumphant.",
+  "trigger_type": "boss_outcome_victory",
+  "context": {
+    "enemy_name": "Goblin Scout",
+    "enemy_color": "#ff4444",
+    "room_name": "Whispering Woods",
+    "room_mood": "eerie"
+  },
+  "model_channel": "fast"
+}

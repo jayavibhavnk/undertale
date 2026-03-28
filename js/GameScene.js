@@ -2,10 +2,12 @@ import storyState from './storyState.js';
 
 const WALL = 16, DOOR_GAP = 48, SPEED = 155;
 const THEME_PARTICLES = {
-    cyberpunk: { colors: [0x00ffff, 0xff00ff, 0x00ff88, 0xff6600], style: 'neon' },
-    medieval:  { colors: [0xffaa44, 0xff8822, 0xffcc66, 0xffffaa], style: 'dust' },
-    space:     { colors: [0x4488ff, 0x44ffaa, 0xffffff, 0x8888ff], style: 'stars' }
+    cyberpunk: { colors: [0x00ffff, 0xff00ff, 0x00ff88, 0xff6600, 0x6633ff, 0xff3366, 0x33ffcc, 0xffff00], style: 'neon' },
+    medieval:  { colors: [0xffaa44, 0xff8822, 0xffcc66, 0xffffaa, 0x44dd44, 0xff6644, 0xddaa66, 0x884422], style: 'dust' },
+    space:     { colors: [0x4488ff, 0x44ffaa, 0xffffff, 0x8888ff, 0xaa44ff, 0xff8844, 0x22ddaa, 0xffdd44], style: 'stars' }
 };
+const BG_DEFAULTS = { cyberpunk: '#1a1445', medieval: '#2a4018', space: '#101830' };
+const WALL_DEFAULTS = { cyberpunk: '#2e2868', medieval: '#6a5438', space: '#344868' };
 
 export default class GameScene extends Phaser.Scene {
     constructor() { super('GameScene'); }
@@ -14,6 +16,7 @@ export default class GameScene extends Phaser.Scene {
         this.roomSpec = data.roomSpec;
         this.entryDirection = data.entryDirection || 'bottom';
         this.combatResult = data.combatResult || null;
+        this.bgTextureKey = data.bgTextureKey || null;
     }
 
     create() {
@@ -21,7 +24,9 @@ export default class GameScene extends Phaser.Scene {
         const W = this.scale.width, H = this.scale.height;
         this.playW = W - WALL * 2;
         this.playH = H - WALL * 2;
-        this.cameras.main.setBackgroundColor(spec.bg_color || '#0a0a1e');
+        this.cameras.main.setBackgroundColor(spec.bg_color || BG_DEFAULTS[storyState.theme] || '#1a1445');
+        this.drawBackgroundGradient(spec);
+        this.tryLoadAIBackground(W, H);
 
         storyState.visitRoom(spec.room_id);
 
@@ -47,12 +52,10 @@ export default class GameScene extends Phaser.Scene {
         this.buildEnemies(spec.enemies || []);
         this.addVignette();
 
-        // Register quests from NPCs
         for (const npc of (spec.npcs || [])) {
             if (npc.quest) storyState.addQuest(npc.quest);
         }
 
-        // Remove defeated enemies
         let finaleVictory = false;
         if (this.combatResult) {
             const eid = this.combatResult.enemyId;
@@ -71,7 +74,6 @@ export default class GameScene extends Phaser.Scene {
             }
         }
 
-        // Player
         const start = this.getStartPos();
         this.player = this.physics.add.sprite(start.x, start.y, 'player_down').setDepth(10).setCollideWorldBounds(true);
         this.player.body.setSize(14, 18).setOffset(3, 10);
@@ -105,7 +107,8 @@ export default class GameScene extends Phaser.Scene {
         if (music) {
             const theme = storyState.theme || 'cyberpunk';
             const mood = spec.mood || 'calm';
-            music.play(`explore_${theme}_${mood}`);
+            music.playRoom(theme, mood, spec.name, spec.narration, spec.room_id);
+            this._preloadCombatMusic(spec, theme);
         }
 
         if (spec.narration && !this.combatResult) {
@@ -199,6 +202,18 @@ export default class GameScene extends Phaser.Scene {
         }).catch(() => {});
     }
 
+    _preloadCombatMusic(spec, theme) {
+        const music = this.registry.get('musicManager');
+        if (!music) return;
+        const enemies = (spec.enemies || []).filter(e =>
+            !storyState.npcsDefeated.includes(e.id) &&
+            !storyState.npcsSpared.includes(e.id)
+        );
+        for (const enemy of enemies) {
+            music.preloadCombat(theme, enemy.name, spec.mood);
+        }
+    }
+
     update(time, delta) {
         if (this.mode === 'explore' && !this.transitioning) {
             let vx = 0, vy = 0;
@@ -254,11 +269,46 @@ export default class GameScene extends Phaser.Scene {
     }
 
     // === ENVIRONMENT ===
+    tryLoadAIBackground(W, H) {
+        if (!this.bgTextureKey) return;
+        if (this.textures.exists(this.bgTextureKey)) {
+            this.add.image(W / 2, H / 2, this.bgTextureKey)
+                .setDisplaySize(W, H).setDepth(-0.5).setAlpha(0.7);
+        }
+    }
+
+    drawBackgroundGradient(spec) {
+        const W = this.scale.width, H = this.scale.height;
+        const g = this.add.graphics().setDepth(-1);
+        const theme = storyState.theme;
+        const GRAD = {
+            cyberpunk: [{ c: 0x1a1445, a: 1 }, { c: 0x221852, a: 1 }, { c: 0x2a1c5e, a: 1 }],
+            medieval:  [{ c: 0x2a4018, a: 1 }, { c: 0x304a1e, a: 1 }, { c: 0x385224, a: 1 }],
+            space:     [{ c: 0x101830, a: 1 }, { c: 0x162040, a: 1 }, { c: 0x1a244a, a: 1 }]
+        };
+        const stops = GRAD[theme] || GRAD.cyberpunk;
+        const bandH = Math.ceil(H / (stops.length - 1));
+        for (let i = 0; i < stops.length - 1; i++) {
+            const steps = 16;
+            const sh = Math.ceil(bandH / steps);
+            const c1 = Phaser.Display.Color.IntegerToColor(stops[i].c);
+            const c2 = Phaser.Display.Color.IntegerToColor(stops[i + 1].c);
+            for (let s = 0; s < steps; s++) {
+                const t = s / steps;
+                const r = Math.round(c1.r + (c2.r - c1.r) * t);
+                const gr = Math.round(c1.g + (c2.g - c1.g) * t);
+                const b = Math.round(c1.b + (c2.b - c1.b) * t);
+                g.fillStyle(Phaser.Display.Color.GetColor(r, gr, b), 1);
+                g.fillRect(0, i * bandH + s * sh, W, sh + 1);
+            }
+        }
+    }
+
     norm(nx, ny) { return { x: WALL + nx * this.playW, y: WALL + ny * this.playH }; }
 
     buildWalls(spec) {
         const W = this.scale.width, H = this.scale.height;
-        const wc = Phaser.Display.Color.HexStringToColor(spec.wall_color || '#2a2a3e').color;
+        const wc = Phaser.Display.Color.HexStringToColor(spec.wall_color || WALL_DEFAULTS[storyState.theme] || '#2e2868').color;
         const exitDirs = new Map();
         for (const e of (spec.exits || [])) exitDirs.set(e.direction, e.position || 0.5);
 
@@ -285,26 +335,103 @@ export default class GameScene extends Phaser.Scene {
             }
         }
 
-        // Wall detail pattern
         const g = this.add.graphics().setDepth(0);
-        const wCol = Phaser.Display.Color.HexStringToColor(spec.wall_color || '#2a2a3e');
-        const detailColor = Phaser.Display.Color.GetColor(
-            Math.min(255, wCol.r + 15), Math.min(255, wCol.g + 15), Math.min(255, wCol.b + 15));
+        const wCol = Phaser.Display.Color.HexStringToColor(spec.wall_color || WALL_DEFAULTS[storyState.theme] || '#2e2868');
+        const detLight = Phaser.Display.Color.GetColor(
+            Math.min(255, wCol.r + 25), Math.min(255, wCol.g + 25), Math.min(255, wCol.b + 25));
+        const detDark = Phaser.Display.Color.GetColor(
+            Math.max(0, wCol.r - 12), Math.max(0, wCol.g - 12), Math.max(0, wCol.b - 12));
 
-        g.lineStyle(1, detailColor, 0.2);
         const theme = storyState.theme;
         if (theme === 'cyberpunk') {
-            for (let y = 0; y < WALL; y += 4) { g.lineBetween(0, y, W, y); g.lineBetween(0, H - y, W, H - y); }
+            for (let y = 0; y < WALL; y += 4) {
+                const a = (y % 8 === 0) ? 0.4 : 0.2;
+                g.lineStyle(1, detLight, a);
+                g.lineBetween(0, y, W, y);
+                g.lineBetween(0, H - WALL + y, W, H - WALL + y);
+            }
+            g.lineStyle(2, 0x00ffff, 0.25);
+            g.lineBetween(0, WALL - 1, W, WALL - 1);
+            g.lineBetween(0, H - WALL + 1, W, H - WALL + 1);
+            g.lineStyle(2, 0x00ffff, 0.25);
+            g.lineBetween(WALL - 1, 0, WALL - 1, H);
+            g.lineBetween(W - WALL + 1, 0, W - WALL + 1, H);
+            for (let i = 0; i < 5; i++) {
+                const dx = Phaser.Math.Between(WALL + 20, W - WALL - 20);
+                for (let j = 0; j < 4; j++) {
+                    const dot = this.add.rectangle(dx, j * 3 + 2, 1, 1, 0x00ffff, 0).setDepth(1);
+                    this.tweens.add({
+                        targets: dot, alpha: 0.3, y: WALL - 2, duration: 2000,
+                        delay: i * 600 + j * 200, repeat: -1, ease: 'Sine.easeIn'
+                    });
+                }
+            }
+            for (let i = 0; i < 3; i++) {
+                const fx = Phaser.Math.Between(30, W - 30);
+                const fy = Phaser.Math.Between(0, 1) === 0 ? Phaser.Math.Between(1, WALL - 2) : Phaser.Math.Between(H - WALL + 1, H - 2);
+                const flicker = this.add.rectangle(fx, fy, Phaser.Math.Between(15, 35), 3, detLight, 0.15).setDepth(0);
+                this.tweens.add({ targets: flicker, alpha: 0.35, duration: Phaser.Math.Between(300, 800), yoyo: true, repeat: -1, repeatDelay: Phaser.Math.Between(1000, 4000) });
+            }
         } else if (theme === 'medieval') {
-            for (let x = 0; x < W; x += 12) for (let y = 0; y < WALL; y += 6) {
-                const off = (Math.floor(y / 6) % 2) * 6;
-                g.strokeRect(x + off, y, 12, 6);
-                g.strokeRect(x + off, H - WALL + y, 12, 6);
+            const brickColors = [
+                detLight,
+                Phaser.Display.Color.GetColor(Math.min(255, wCol.r + 8), Math.min(255, wCol.g + 5), Math.min(255, wCol.b + 2)),
+                Phaser.Display.Color.GetColor(Math.min(255, wCol.r + 20), Math.min(255, wCol.g + 12), Math.min(255, wCol.b + 6))
+            ];
+            for (let x = 0; x < W; x += 14) {
+                for (let y = 0; y < WALL; y += 7) {
+                    const off = (Math.floor(y / 7) % 2) * 7;
+                    const bc = Phaser.Utils.Array.GetRandom(brickColors);
+                    g.fillStyle(bc, 0.25);
+                    g.fillRect(x + off + 1, y + 1, 12, 5);
+                    g.lineStyle(1, detDark, 0.35);
+                    g.strokeRect(x + off, y, 14, 7);
+                    g.fillStyle(bc, 0.25);
+                    g.fillRect(x + off + 1, H - WALL + y + 1, 12, 5);
+                    g.lineStyle(1, detDark, 0.35);
+                    g.strokeRect(x + off, H - WALL + y, 14, 7);
+                }
+            }
+            for (let i = 0; i < 6; i++) {
+                const mx = Phaser.Math.Between(10, W - 10);
+                this.add.ellipse(mx, H - WALL + 2, Phaser.Math.Between(6, 14), Phaser.Math.Between(3, 6), 0x44882a, Phaser.Math.FloatBetween(0.12, 0.22)).setDepth(0);
+            }
+            for (let i = 0; i < 3; i++) {
+                const tx = WALL + 40 + i * Math.floor((W - WALL * 2 - 80) / 2);
+                const glowPool = this.add.ellipse(tx, WALL + 4, 40, 20, 0xffaa22, 0.1).setDepth(0);
+                this.tweens.add({ targets: glowPool, alpha: 0.22, scaleX: 1.1, duration: 800 + i * 200, yoyo: true, repeat: -1 });
             }
         } else {
-            for (let x = 0; x < W; x += 20) {
+            for (let x = 0; x < W; x += 24) {
+                g.lineStyle(1, detLight, 0.3);
                 g.lineBetween(x, 0, x, WALL);
                 g.lineBetween(x, H - WALL, x, H);
+            }
+            g.fillStyle(detLight, 0.12);
+            for (let x = 4; x < W; x += 24) {
+                for (let ry = 2; ry < WALL; ry += 6) {
+                    g.fillCircle(x, ry, 1);
+                    g.fillCircle(x, H - WALL + ry, 1);
+                }
+            }
+            const stripeW = 4;
+            for (let x = 0; x < W; x += stripeW * 2) {
+                g.fillStyle(0xccaa00, 0.14);
+                g.fillRect(x, WALL - 4, stripeW, 4);
+                g.fillRect(x, H - WALL, stripeW, 4);
+            }
+            for (let i = 0; i < 6; i++) {
+                const lx = Phaser.Math.Between(WALL + 10, W - WALL - 10);
+                const ly = Phaser.Math.Between(0, 1) === 0 ? Phaser.Math.Between(2, WALL - 3) : Phaser.Math.Between(H - WALL + 2, H - 3);
+                const colors = [0x44ff44, 0xff4444, 0x4488ff, 0xffaa00];
+                const lc = Phaser.Utils.Array.GetRandom(colors);
+                const light = this.add.rectangle(lx, ly, 3, 2, lc, 0).setDepth(1);
+                this.tweens.add({ targets: light, alpha: 0.5, duration: Phaser.Math.Between(400, 1200), yoyo: true, repeat: -1, delay: Phaser.Math.Between(0, 3000) });
+            }
+            g.lineStyle(2, detLight, 0.25);
+            for (let y = 0; y < WALL; y += 8) {
+                g.lineBetween(0, y, W, y);
+                g.lineBetween(0, H - WALL + y, W, H - WALL + y);
             }
         }
     }
@@ -318,123 +445,297 @@ export default class GameScene extends Phaser.Scene {
 
     drawFloor(spec) {
         const W = this.scale.width, H = this.scale.height;
-        const bg = Phaser.Display.Color.HexStringToColor(spec.bg_color || '#0a0a1e');
+        const bg = Phaser.Display.Color.HexStringToColor(spec.bg_color || BG_DEFAULTS[storyState.theme] || '#1a1445');
         const g = this.add.graphics().setDepth(0);
+        const L = WALL, R = W - WALL, T = WALL, B = H - WALL;
 
         const lineC = Phaser.Display.Color.GetColor(
-            Math.min(255, bg.r + 10), Math.min(255, bg.g + 10), Math.min(255, bg.b + 10));
+            Math.min(255, bg.r + 18), Math.min(255, bg.g + 18), Math.min(255, bg.b + 18));
         const detC = Phaser.Display.Color.GetColor(
-            Math.min(255, bg.r + 20), Math.min(255, bg.g + 20), Math.min(255, bg.b + 20));
+            Math.min(255, bg.r + 30), Math.min(255, bg.g + 30), Math.min(255, bg.b + 30));
+        const hiC = Phaser.Display.Color.GetColor(
+            Math.min(255, bg.r + 50), Math.min(255, bg.g + 50), Math.min(255, bg.b + 50));
 
         const theme = storyState.theme;
+
+        const FLOOR_BASE = { cyberpunk: 0x1e1850, medieval: 0x3a5428, space: 0x182440 };
+        g.fillStyle(FLOOR_BASE[theme] || 0x1e1850, 0.6);
+        g.fillRect(L, T, R - L, B - T);
+
         if (theme === 'cyberpunk') {
-            g.lineStyle(1, lineC, 0.1);
-            for (let x = WALL; x < W - WALL; x += 32) g.lineBetween(x, WALL, x, H - WALL);
-            for (let y = WALL; y < H - WALL; y += 32) g.lineBetween(WALL, y, W - WALL, y);
-            // Neon floor strips
-            g.lineStyle(2, 0x00ffff, 0.04);
-            for (let i = 0; i < 3; i++) {
-                const y = WALL + 60 + i * 120;
-                g.lineBetween(WALL, y, W - WALL, y);
+            g.lineStyle(1, 0x2a2468, 0.25);
+            for (let x = L; x < R; x += 32) g.lineBetween(x, T, x, B);
+            for (let y = T; y < B; y += 32) g.lineBetween(L, y, R, y);
+            g.lineStyle(1, 0x3a34aa, 0.35);
+            for (let x = L; x < R; x += 128) g.lineBetween(x, T, x, B);
+            for (let y = T; y < B; y += 128) g.lineBetween(L, y, R, y);
+            g.fillStyle(0x00ffff, 0.2);
+            for (let x = L; x < R; x += 128) {
+                for (let y = T; y < B; y += 128) g.fillCircle(x, y, 2);
+            }
+            for (let i = 0; i < 5; i++) {
+                const sy = T + 40 + i * Math.floor((B - T - 80) / 4);
+                const strip = this.add.rectangle(W / 2, sy, R - L, 2, 0x00ffff, 0.12).setDepth(0);
+                this.tweens.add({ targets: strip, alpha: 0.28, duration: 1200 + i * 300, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+            }
+            for (let i = 0; i < 6; i++) {
+                const rx = Phaser.Math.Between(L + 20, R - 20);
+                const ry = Phaser.Math.Between(T + 20, B - 20);
+                g.fillStyle(0x00ffff, Phaser.Math.FloatBetween(0.04, 0.08));
+                g.fillRect(rx, ry, Phaser.Math.Between(30, 60), Phaser.Math.Between(15, 30));
+            }
+            for (let i = 0; i < 4; i++) {
+                const hx = Phaser.Math.Between(L + 30, R - 30);
+                const hy = Phaser.Math.Between(T + 30, B - 30);
+                const hw = Phaser.Math.Between(20, 40), hh = Phaser.Math.Between(20, 40);
+                g.lineStyle(1, 0xff00ff, 0.12);
+                g.strokeRect(hx, hy, hw, hh);
+                g.fillStyle(0xff00ff, 0.04);
+                g.fillRect(hx, hy, hw, hh);
             }
         } else if (theme === 'medieval') {
-            // Irregular stone
-            for (let x = WALL; x < W - WALL; x += Phaser.Math.Between(28, 40)) {
-                for (let y = WALL; y < H - WALL; y += Phaser.Math.Between(24, 36)) {
-                    const sw = Phaser.Math.Between(24, 36), sh = Phaser.Math.Between(20, 32);
-                    g.lineStyle(1, lineC, 0.08);
+            const stoneColors = [
+                Phaser.Display.Color.GetColor(Math.min(255, bg.r + 20), Math.min(255, bg.g + 16), Math.min(255, bg.b + 10)),
+                Phaser.Display.Color.GetColor(Math.min(255, bg.r + 30), Math.min(255, bg.g + 24), Math.min(255, bg.b + 14)),
+                Phaser.Display.Color.GetColor(Math.min(255, bg.r + 14), Math.min(255, bg.g + 18), Math.min(255, bg.b + 10))
+            ];
+            const mortarC = Phaser.Display.Color.GetColor(Math.max(0, bg.r - 8), Math.max(0, bg.g - 8), Math.max(0, bg.b - 5));
+            for (let x = L; x < R; x += Phaser.Math.Between(28, 42)) {
+                for (let y = T; y < B; y += Phaser.Math.Between(24, 38)) {
+                    const sw = Phaser.Math.Between(26, 40), sh = Phaser.Math.Between(22, 34);
+                    const sc = Phaser.Utils.Array.GetRandom(stoneColors);
+                    g.fillStyle(sc, Phaser.Math.FloatBetween(0.15, 0.25));
+                    g.fillRect(x + 1, y + 1, sw - 2, sh - 2);
+                    g.lineStyle(1, mortarC, 0.3);
                     g.strokeRect(x, y, sw, sh);
                 }
             }
+            const corners = [
+                { x: L, y: T }, { x: R - 40, y: T }, { x: L, y: B - 30 }, { x: R - 40, y: B - 30 }
+            ];
+            for (const corner of corners) {
+                for (let i = 0; i < 4; i++) {
+                    this.add.ellipse(
+                        corner.x + Phaser.Math.Between(5, 35), corner.y + Phaser.Math.Between(5, 25),
+                        Phaser.Math.Between(10, 22), Phaser.Math.Between(6, 12), 0x44882a, Phaser.Math.FloatBetween(0.12, 0.22)
+                    ).setDepth(0);
+                }
+            }
+            const cx = W / 2, runnerW = 38;
+            g.fillStyle(0x7a2233, 0.12);
+            g.fillRect(cx - runnerW / 2, T + 10, runnerW, B - T - 20);
+            g.lineStyle(1, 0xaa4455, 0.18);
+            g.strokeRect(cx - runnerW / 2, T + 10, runnerW, B - T - 20);
+            for (let ry = T + 20; ry < B - 20; ry += 36) {
+                g.fillStyle(0xccaa44, 0.12);
+                g.fillRect(cx - 5, ry, 10, 5);
+            }
         } else {
-            // Metal grating
-            g.lineStyle(1, lineC, 0.12);
-            for (let x = WALL; x < W - WALL; x += 24) g.lineBetween(x, WALL, x, H - WALL);
-            for (let y = WALL; y < H - WALL; y += 24) g.lineBetween(WALL, y, W - WALL, y);
-            // Under-glow
-            g.fillStyle(0x4488ff, 0.02);
-            for (let x = WALL + 12; x < W - WALL; x += 48) {
-                for (let y = WALL + 12; y < H - WALL; y += 48) g.fillRect(x - 4, y - 4, 8, 8);
+            const panelSize = 48;
+            g.lineStyle(1, 0x2a3858, 0.3);
+            for (let x = L; x < R; x += panelSize) g.lineBetween(x, T, x, B);
+            for (let y = T; y < B; y += panelSize) g.lineBetween(L, y, R, y);
+            g.fillStyle(0x3a4c6a, 0.15);
+            for (let x = L; x < R; x += panelSize) {
+                for (let y = T; y < B; y += panelSize) {
+                    g.fillCircle(x + 3, y + 3, 1.5);
+                    g.fillCircle(x + panelSize - 3, y + 3, 1.5);
+                    g.fillCircle(x + 3, y + panelSize - 3, 1.5);
+                    g.fillCircle(x + panelSize - 3, y + panelSize - 3, 1.5);
+                }
+            }
+            for (let i = 0; i < 3; i++) {
+                const cy = T + 30 + i * Math.floor((B - T - 60) / 2);
+                const conduit = this.add.rectangle(W / 2, cy, R - L - 20, 2, 0x4488ff, 0.08).setDepth(0);
+                this.tweens.add({ targets: conduit, alpha: 0.22, duration: 1800 + i * 400, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+            }
+            const stripeW = 6;
+            for (let x = L; x < L + 20; x += stripeW * 2) {
+                g.fillStyle(0xccaa00, 0.12);
+                g.fillRect(x, T, stripeW, B - T);
+            }
+            for (let x = R - 20; x < R; x += stripeW * 2) {
+                g.fillStyle(0xccaa00, 0.12);
+                g.fillRect(x, T, stripeW, B - T);
+            }
+            for (let i = 0; i < 12; i++) {
+                const sx = Phaser.Math.Between(L + 5, R - 5);
+                const sy = Phaser.Math.Between(T + 5, B - 5);
+                const star = this.add.rectangle(sx, sy, 1, 1, 0xffffff, 0).setDepth(0);
+                this.tweens.add({
+                    targets: star, alpha: Phaser.Math.FloatBetween(0.15, 0.45),
+                    duration: Phaser.Math.Between(1500, 4000), yoyo: true, repeat: -1,
+                    delay: Phaser.Math.Between(0, 3000)
+                });
             }
         }
 
-        // Random floor scratches/details
-        for (let i = 0; i < 15; i++) {
-            const dx = Phaser.Math.Between(WALL + 8, W - WALL - 8);
-            const dy = Phaser.Math.Between(WALL + 8, H - WALL - 8);
-            g.fillStyle(detC, Phaser.Math.FloatBetween(0.06, 0.15));
-            g.fillRect(dx, dy, Phaser.Math.Between(1, 5), Phaser.Math.Between(1, 3));
+        for (let i = 0; i < 20; i++) {
+            const dx = Phaser.Math.Between(L + 8, R - 8);
+            const dy = Phaser.Math.Between(T + 8, B - 8);
+            g.fillStyle(hiC, Phaser.Math.FloatBetween(0.08, 0.22));
+            g.fillRect(dx, dy, Phaser.Math.Between(1, 6), Phaser.Math.Between(1, 4));
         }
     }
 
     addDecorations(spec) {
-        const W = this.scale.width, H = this.scale.height;
         const g = this.add.graphics().setDepth(1);
-        const theme = storyState.theme;
 
         for (const d of (spec.decorations || [])) {
             const p = this.norm(d.x, d.y);
             const c = Phaser.Display.Color.HexStringToColor(d.color || '#444466').color;
-
             switch (d.type) {
-                case 'neon_sign': case 'graffiti':
+                case 'neon_sign': case 'graffiti': case 'hologram': {
+                    this.add.ellipse(p.x, p.y, 70, 35, c, 0.05).setDepth(0);
                     if (d.text) {
-                        this.add.text(p.x, p.y, d.text, {
-                            fontFamily: '"Press Start 2P"', fontSize: '6px', color: d.color || '#ff00ff',
-                            shadow: { offsetX: 0, offsetY: 0, color: d.color || '#ff00ff', blur: 8, fill: true }
+                        const txt = this.add.text(p.x, p.y, d.text, {
+                            fontFamily: '"Press Start 2P"', fontSize: '8px', color: d.color || '#ff00ff',
+                            shadow: { offsetX: 0, offsetY: 0, color: d.color || '#ff00ff', blur: 12, fill: true }
                         }).setOrigin(0.5).setDepth(2);
+                        this.tweens.add({ targets: txt, alpha: 0.6, duration: Phaser.Math.Between(1500, 3000), yoyo: true, repeat: -1 });
                     }
-                    this.add.ellipse(p.x, p.y, 40, 20, c, 0.06).setDepth(0);
+                    const neonGlow = this.add.ellipse(p.x, p.y + 15, 60, 20, c, 0.04).setDepth(0);
+                    this.tweens.add({ targets: neonGlow, alpha: 0.1, scaleX: 1.1, duration: 1200, yoyo: true, repeat: -1 });
                     break;
-                case 'torch_bracket': case 'lantern': case 'warning_light':
-                    g.fillStyle(c, 0.3); g.fillRect(p.x - 2, p.y - 4, 4, 8);
-                    const lGlow = this.add.ellipse(p.x, p.y, 50, 50, c, 0.06).setDepth(0);
-                    this.tweens.add({ targets: lGlow, alpha: 0.12, duration: 600 + Math.random() * 400, yoyo: true, repeat: -1 });
-                    break;
-                case 'pipe': case 'cable_run':
-                    g.lineStyle(2, c, 0.25);
-                    g.lineBetween(p.x, p.y, p.x + Phaser.Math.Between(30, 80), p.y + Phaser.Math.Between(-10, 10));
-                    break;
-                case 'puddle':
-                    this.add.ellipse(p.x, p.y, 24, 10, c, 0.1).setDepth(0);
-                    break;
-                case 'vent': case 'steam_vent':
-                    g.fillStyle(0x222222, 0.3); g.fillRect(p.x - 8, p.y - 4, 16, 8);
-                    for (let i = 0; i < 3; i++) {
-                        const prt = this.add.rectangle(p.x + Phaser.Math.Between(-4, 4), p.y, 1, 2, 0xffffff, 0).setDepth(1);
+                }
+                case 'torch_bracket': case 'lantern': case 'warning_light': {
+                    g.fillStyle(c, 0.4); g.fillRect(p.x - 3, p.y - 6, 6, 10);
+                    g.fillStyle(c, 0.6); g.fillRect(p.x - 2, p.y - 8, 4, 4);
+                    const tGlow = this.add.ellipse(p.x, p.y, 70, 70, c, 0.05).setDepth(0);
+                    this.tweens.add({ targets: tGlow, alpha: 0.14, scaleX: 1.1, scaleY: 1.1, duration: 500 + Math.random() * 400, yoyo: true, repeat: -1 });
+                    const floorGlow = this.add.ellipse(p.x, p.y + 20, 50, 16, c, 0.04).setDepth(0);
+                    this.tweens.add({ targets: floorGlow, alpha: 0.1, duration: 700, yoyo: true, repeat: -1 });
+                    for (let fi = 0; fi < 3; fi++) {
+                        const flame = this.add.rectangle(p.x + Phaser.Math.Between(-2, 2), p.y - 8, 1, 2, c, 0).setDepth(2);
                         this.tweens.add({
-                            targets: prt, y: p.y - 20, alpha: { from: 0, to: 0.2 }, duration: 1500,
-                            yoyo: false, repeat: -1, delay: i * 500
+                            targets: flame, y: p.y - 20 - fi * 4, alpha: { from: 0.4, to: 0 },
+                            duration: 800, repeat: -1, delay: fi * 250
                         });
                     }
                     break;
-                case 'barrel': case 'crate_stack':
-                    g.fillStyle(c, 0.2); g.fillRect(p.x - 6, p.y - 6, 12, 12);
-                    g.lineStyle(1, c, 0.3); g.strokeRect(p.x - 6, p.y - 6, 12, 12);
+                }
+                case 'pipe': case 'cable_run': {
+                    const ex = p.x + Phaser.Math.Between(40, 100);
+                    const ey = p.y + Phaser.Math.Between(-15, 15);
+                    g.lineStyle(3, c, 0.2);
+                    g.lineBetween(p.x, p.y, ex, ey);
+                    g.lineStyle(1, c, 0.35);
+                    g.lineBetween(p.x, p.y - 1, ex, ey - 1);
+                    g.fillStyle(c, 0.15);
+                    g.fillCircle(p.x, p.y, 3);
+                    g.fillCircle(ex, ey, 3);
                     break;
-                case 'console': case 'screen': case 'terminal':
-                    g.fillStyle(0x111122, 0.5); g.fillRect(p.x - 8, p.y - 6, 16, 12);
-                    const sc = this.add.rectangle(p.x, p.y, 12, 8, c, 0.2).setDepth(1);
-                    this.tweens.add({ targets: sc, alpha: 0.35, duration: 800, yoyo: true, repeat: -1 });
+                }
+                case 'puddle': {
+                    this.add.ellipse(p.x, p.y, 36, 14, c, 0.08).setDepth(0);
+                    const shimmer = this.add.ellipse(p.x, p.y, 28, 10, 0xffffff, 0.02).setDepth(0);
+                    this.tweens.add({ targets: shimmer, alpha: 0.08, scaleX: 1.15, duration: 2000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
                     break;
-                case 'viewport':
-                    g.fillStyle(0x000022, 0.4); g.fillRect(p.x - 12, p.y - 8, 24, 16);
-                    g.fillStyle(0xffffff, 0.03);
-                    for (let s = 0; s < 5; s++) g.fillRect(p.x - 10 + Math.random() * 18, p.y - 6 + Math.random() * 10, 1, 1);
-                    break;
-                case 'banner': case 'cobweb': case 'chain':
-                    g.lineStyle(1, c, 0.2);
-                    for (let i = 0; i < 3; i++) g.lineBetween(p.x, p.y, p.x + Phaser.Math.Between(-10, 10), p.y + Phaser.Math.Between(8, 20));
-                    break;
-                case 'skull': case 'moss': case 'crack': case 'sparking_wire':
-                    g.fillStyle(c, 0.15); g.fillCircle(p.x, p.y, 4);
-                    if (d.type === 'sparking_wire') {
-                        const spark = this.add.rectangle(p.x, p.y, 2, 2, 0xffff44, 0).setDepth(2);
-                        this.tweens.add({ targets: spark, alpha: 0.8, duration: 100, yoyo: true, repeat: -1, repeatDelay: Phaser.Math.Between(500, 2000) });
+                }
+                case 'vent': case 'steam_vent': {
+                    g.fillStyle(0x222222, 0.35); g.fillRect(p.x - 12, p.y - 5, 24, 10);
+                    g.lineStyle(1, 0x444444, 0.2);
+                    for (let sl = -10; sl <= 10; sl += 4) g.lineBetween(p.x + sl, p.y - 4, p.x + sl, p.y + 4);
+                    for (let vi = 0; vi < 5; vi++) {
+                        const prt = this.add.rectangle(p.x + Phaser.Math.Between(-8, 8), p.y, 1, Phaser.Math.Between(2, 4), 0xffffff, 0).setDepth(1);
+                        this.tweens.add({
+                            targets: prt, y: p.y - 30 - vi * 5, alpha: { from: 0, to: 0.25 }, duration: 1800,
+                            yoyo: false, repeat: -1, delay: vi * 350
+                        });
                     }
                     break;
-                default:
-                    g.fillStyle(c, 0.1); g.fillRect(p.x - 4, p.y - 4, 8, 8);
+                }
+                case 'barrel': case 'crate_stack': {
+                    this.add.ellipse(p.x, p.y + 12, 18, 5, 0x000000, 0.15).setDepth(0);
+                    g.fillStyle(c, 0.25); g.fillRect(p.x - 10, p.y - 10, 20, 20);
+                    g.lineStyle(1, c, 0.4); g.strokeRect(p.x - 10, p.y - 10, 20, 20);
+                    const hiC2 = Phaser.Display.Color.IntegerToColor(c);
+                    const highlight = Phaser.Display.Color.GetColor(
+                        Math.min(255, hiC2.r + 40), Math.min(255, hiC2.g + 40), Math.min(255, hiC2.b + 40));
+                    g.lineStyle(1, highlight, 0.15);
+                    g.lineBetween(p.x - 9, p.y - 9, p.x + 9, p.y - 9);
+                    g.lineBetween(p.x - 9, p.y - 9, p.x - 9, p.y + 9);
+                    if (d.type === 'barrel') {
+                        g.lineStyle(1, c, 0.3);
+                        g.lineBetween(p.x - 9, p.y - 3, p.x + 9, p.y - 3);
+                        g.lineBetween(p.x - 9, p.y + 3, p.x + 9, p.y + 3);
+                    }
+                    break;
+                }
+                case 'console': case 'screen': case 'terminal': {
+                    g.fillStyle(0x111122, 0.55); g.fillRect(p.x - 12, p.y - 9, 24, 18);
+                    g.lineStyle(1, 0x333355, 0.3); g.strokeRect(p.x - 12, p.y - 9, 24, 18);
+                    const screen = this.add.rectangle(p.x, p.y, 18, 12, c, 0.15).setDepth(1);
+                    this.tweens.add({ targets: screen, alpha: 0.35, duration: 800, yoyo: true, repeat: -1 });
+                    for (let sl = -5; sl <= 5; sl += 3) {
+                        g.lineStyle(1, c, 0.05);
+                        g.lineBetween(p.x - 8, p.y + sl, p.x + 8, p.y + sl);
+                    }
+                    const cursor = this.add.rectangle(p.x - 4, p.y + 2, 3, 1, c, 0).setDepth(2);
+                    this.tweens.add({ targets: cursor, alpha: 0.6, duration: 500, yoyo: true, repeat: -1 });
+                    break;
+                }
+                case 'viewport': case 'specimen_tube': {
+                    g.fillStyle(0x000022, 0.5); g.fillRect(p.x - 18, p.y - 12, 36, 24);
+                    g.lineStyle(1, 0x334466, 0.35); g.strokeRect(p.x - 18, p.y - 12, 36, 24);
+                    g.lineStyle(2, 0x445577, 0.2); g.strokeRect(p.x - 19, p.y - 13, 38, 26);
+                    for (let s = 0; s < 10; s++) {
+                        const sx = p.x - 15 + Math.random() * 28;
+                        const sy = p.y - 9 + Math.random() * 16;
+                        const star = this.add.rectangle(sx, sy, 1, 1, 0xffffff, 0).setDepth(1);
+                        this.tweens.add({
+                            targets: star, alpha: Phaser.Math.FloatBetween(0.15, 0.5),
+                            duration: Phaser.Math.Between(1200, 3500), yoyo: true, repeat: -1,
+                            delay: Phaser.Math.Between(0, 2000)
+                        });
+                    }
+                    break;
+                }
+                case 'banner': case 'cobweb': case 'chain': case 'armor_stand': case 'bookshelf': {
+                    this.add.ellipse(p.x, p.y + 16, 14, 4, 0x000000, 0.12).setDepth(0);
+                    g.lineStyle(1, c, 0.3);
+                    g.lineBetween(p.x - 4, p.y - 2, p.x + 4, p.y - 2);
+                    for (let bi = 0; bi < 5; bi++) {
+                        g.lineStyle(1, c, 0.15 + bi * 0.03);
+                        g.lineBetween(p.x - 3 + bi, p.y - 2, p.x - 6 + bi * 2 + Phaser.Math.Between(-2, 2), p.y + Phaser.Math.Between(10, 28));
+                    }
+                    if (d.type === 'banner') {
+                        g.fillStyle(c, 0.08);
+                        g.fillRect(p.x - 5, p.y, 10, 20);
+                    }
+                    break;
+                }
+                case 'skull': case 'moss': case 'crack': case 'sparking_wire': case 'antenna': {
+                    g.fillStyle(c, 0.2); g.fillCircle(p.x, p.y, 6);
+                    g.fillStyle(c, 0.08); g.fillCircle(p.x, p.y, 10);
+                    if (d.type === 'sparking_wire' || d.type === 'antenna') {
+                        g.lineStyle(1, c, 0.2);
+                        g.lineBetween(p.x, p.y, p.x + Phaser.Math.Between(-8, 8), p.y - 15);
+                        const spark = this.add.rectangle(p.x, p.y, 3, 3, 0xffff44, 0).setDepth(2);
+                        this.tweens.add({ targets: spark, alpha: 0.9, duration: 80, yoyo: true, repeat: -1, repeatDelay: Phaser.Math.Between(400, 1500) });
+                        const sparkGlow = this.add.ellipse(p.x, p.y, 16, 16, 0xffff44, 0).setDepth(1);
+                        this.tweens.add({ targets: sparkGlow, alpha: 0.15, duration: 80, yoyo: true, repeat: -1, repeatDelay: Phaser.Math.Between(400, 1500) });
+                    }
+                    if (d.type === 'moss') {
+                        for (let mi = 0; mi < 3; mi++) {
+                            g.fillStyle(0x336622, Phaser.Math.FloatBetween(0.06, 0.12));
+                            g.fillCircle(p.x + Phaser.Math.Between(-6, 6), p.y + Phaser.Math.Between(-4, 4), Phaser.Math.Between(2, 5));
+                        }
+                    }
+                    break;
+                }
+                case 'dumpster': case 'crate': {
+                    this.add.ellipse(p.x, p.y + 14, 22, 5, 0x000000, 0.15).setDepth(0);
+                    g.fillStyle(c, 0.2); g.fillRect(p.x - 12, p.y - 8, 24, 16);
+                    g.lineStyle(1, c, 0.35); g.strokeRect(p.x - 12, p.y - 8, 24, 16);
+                    g.lineStyle(1, c, 0.15); g.lineBetween(p.x, p.y - 8, p.x, p.y + 8);
+                    break;
+                }
+                default: {
+                    g.fillStyle(c, 0.15); g.fillRect(p.x - 6, p.y - 6, 12, 12);
+                    g.lineStyle(1, c, 0.2); g.strokeRect(p.x - 6, p.y - 6, 12, 12);
+                    this.add.ellipse(p.x, p.y + 8, 10, 3, 0x000000, 0.1).setDepth(0);
+                }
             }
         }
     }
@@ -444,44 +745,128 @@ export default class GameScene extends Phaser.Scene {
         const theme = storyState.theme || 'cyberpunk';
         const pConf = THEME_PARTICLES[theme] || THEME_PARTICLES.cyberpunk;
 
-        for (let i = 0; i < 15; i++) {
+        for (let i = 0; i < 30; i++) {
             const pc = Phaser.Utils.Array.GetRandom(pConf.colors);
             const x = Phaser.Math.Between(WALL, W - WALL);
             const y = Phaser.Math.Between(WALL, H - WALL);
-            const size = Phaser.Math.Between(1, 3);
-            const p = this.add.rectangle(x, y, size, size, pc, 0).setDepth(1);
+            const size = Phaser.Math.Between(1, 4);
+            let particle;
+            if (theme === 'cyberpunk' && i % 3 === 0) {
+                particle = this.add.circle(x, y, size, pc, 0).setDepth(1);
+            } else if (theme === 'space' && i % 3 === 0) {
+                particle = this.add.star(x, y, 4, size * 0.5, size, pc, 0).setDepth(1);
+            } else {
+                particle = this.add.rectangle(x, y, size, size, pc, 0).setDepth(1);
+            }
             this.tweens.add({
-                targets: p, alpha: { from: 0, to: Phaser.Math.FloatBetween(0.15, 0.5) },
-                x: x + Phaser.Math.Between(-25, 25), y: y + Phaser.Math.Between(-20, 20),
-                duration: Phaser.Math.Between(3000, 7000), yoyo: true, repeat: -1,
-                ease: 'Sine.easeInOut', delay: Phaser.Math.Between(0, 2000)
+                targets: particle, alpha: { from: 0, to: Phaser.Math.FloatBetween(0.15, 0.6) },
+                x: x + Phaser.Math.Between(-30, 30), y: y + Phaser.Math.Between(-25, 25),
+                duration: Phaser.Math.Between(2500, 7000), yoyo: true, repeat: -1,
+                ease: 'Sine.easeInOut', delay: Phaser.Math.Between(0, 2500)
             });
         }
 
-        // Mood overlay
+        const bgShapeCount = 4;
+        const bgG = this.add.graphics().setDepth(0).setAlpha(0);
+        for (let i = 0; i < bgShapeCount; i++) {
+            const sc = Phaser.Utils.Array.GetRandom(pConf.colors);
+            const sx = Phaser.Math.Between(WALL + 30, W - WALL - 30);
+            const sy = Phaser.Math.Between(WALL + 30, H - WALL - 30);
+            const shapeSize = Phaser.Math.Between(25, 50);
+            const shape = this.add.graphics().setDepth(0);
+            shape.lineStyle(1, sc, 0.04);
+            if (theme === 'cyberpunk') {
+                shape.strokeRect(-shapeSize / 2, -shapeSize / 2, shapeSize, shapeSize);
+                shape.lineBetween(-shapeSize / 2, -shapeSize / 2, shapeSize / 2, shapeSize / 2);
+            } else if (theme === 'medieval') {
+                shape.strokeCircle(0, 0, shapeSize / 2);
+            } else {
+                const hs = shapeSize / 2;
+                shape.beginPath();
+                shape.moveTo(0, -hs); shape.lineTo(hs, 0); shape.lineTo(0, hs); shape.lineTo(-hs, 0);
+                shape.closePath(); shape.strokePath();
+            }
+            shape.setPosition(sx, sy);
+            this.tweens.add({
+                targets: shape, angle: 360, duration: Phaser.Math.Between(20000, 40000),
+                repeat: -1, ease: 'Linear'
+            });
+            this.tweens.add({
+                targets: shape, alpha: { from: 0.3, to: 0.8 },
+                duration: Phaser.Math.Between(4000, 8000), yoyo: true, repeat: -1, ease: 'Sine.easeInOut'
+            });
+        }
+        bgG.destroy();
+
         const mood = spec.mood || 'mysterious';
         if (mood === 'eerie' || mood === 'dangerous') {
             const fog = this.add.rectangle(W / 2, H / 2, W, H, 0x220022, 0.06).setDepth(15);
-            this.tweens.add({ targets: fog, alpha: 0.12, duration: 2000, yoyo: true, repeat: -1 });
+            this.tweens.add({ targets: fog, alpha: 0.14, duration: 2000, yoyo: true, repeat: -1 });
+            const scanG = this.add.graphics().setDepth(15);
+            scanG.fillStyle(0x000000, 0.03);
+            for (let sy = 0; sy < H; sy += 4) scanG.fillRect(0, sy, W, 1);
         } else if (mood === 'tense') {
             const tint = this.add.rectangle(W / 2, H / 2, W, H, 0x331100, 0.04).setDepth(15);
-            this.tweens.add({ targets: tint, alpha: 0.08, duration: 3000, yoyo: true, repeat: -1 });
+            this.tweens.add({ targets: tint, alpha: 0.1, duration: 2500, yoyo: true, repeat: -1 });
+            const pulse = this.add.rectangle(W / 2, H / 2, W, H, 0x442200, 0).setDepth(15);
+            this.tweens.add({ targets: pulse, alpha: 0.06, duration: 1500, yoyo: true, repeat: -1, delay: 500 });
+        } else if (mood === 'peaceful') {
+            const glow = this.add.rectangle(W / 2, H / 2, W, H, 0x443300, 0).setDepth(15);
+            this.tweens.add({ targets: glow, alpha: 0.05, duration: 4000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
+        } else if (mood === 'mysterious') {
+            const myst = this.add.rectangle(W / 2, H / 2, W, H, 0x110033, 0).setDepth(15);
+            this.tweens.add({ targets: myst, alpha: 0.06, duration: 5000, yoyo: true, repeat: -1, ease: 'Sine.easeInOut' });
         }
     }
 
     addVignette() {
         const W = this.scale.width, H = this.scale.height;
         const g = this.add.graphics().setDepth(45);
-        for (let i = 0; i < 8; i++) {
-            const a = 0.10 - i * 0.012;
+
+        for (let i = 0; i < 12; i++) {
+            const a = 0.12 - i * 0.01;
             if (a <= 0) break;
-            const s = i * 10;
+            const s = i * 8;
             g.fillStyle(0x000000, a);
-            g.fillRect(0, 0, W, s + 10);
-            g.fillRect(0, H - s - 10, W, s + 10);
-            g.fillRect(0, 0, s + 10, H);
-            g.fillRect(W - s - 10, 0, s + 10, H);
+            g.fillRect(0, 0, W, s + 8);
+            g.fillRect(0, H - s - 8, W, s + 8);
+            g.fillRect(0, 0, s + 8, H);
+            g.fillRect(W - s - 8, 0, s + 8, H);
         }
+
+        const theme = storyState.theme;
+        const TINT_COLORS = { cyberpunk: [0x00ffff, 0xff00ff], medieval: [0xff8833, 0xffaa44], space: [0x3366ff, 0x4488ff] };
+        const tints = TINT_COLORS[theme] || TINT_COLORS.cyberpunk;
+        const tg = this.add.graphics().setDepth(45);
+        tg.fillStyle(tints[0], 0.06);
+        tg.fillRect(0, 0, W, 20);
+        tg.fillRect(0, H - 20, W, 20);
+        tg.fillStyle(tints[1], 0.06);
+        tg.fillRect(0, 0, 20, H);
+        tg.fillRect(W - 20, 0, 20, H);
+
+        const cg = this.add.graphics().setDepth(46);
+        const accentC = tints[0];
+        const cs = 20;
+        cg.lineStyle(2, accentC, 0.25);
+        cg.lineBetween(4, 4, 4 + cs, 4);
+        cg.lineBetween(4, 4, 4, 4 + cs);
+        cg.lineBetween(W - 4, 4, W - 4 - cs, 4);
+        cg.lineBetween(W - 4, 4, W - 4, 4 + cs);
+        cg.lineBetween(4, H - 4, 4 + cs, H - 4);
+        cg.lineBetween(4, H - 4, 4, H - 4 - cs);
+        cg.lineBetween(W - 4, H - 4, W - 4 - cs, H - 4);
+        cg.lineBetween(W - 4, H - 4, W - 4, H - 4 - cs);
+
+        cg.lineStyle(1, accentC, 0.15);
+        cg.lineBetween(2, 2, 2 + cs + 6, 2);
+        cg.lineBetween(2, 2, 2, 2 + cs + 6);
+        cg.lineBetween(W - 2, 2, W - 2 - cs - 6, 2);
+        cg.lineBetween(W - 2, 2, W - 2, 2 + cs + 6);
+        cg.lineBetween(2, H - 2, 2 + cs + 6, H - 2);
+        cg.lineBetween(2, H - 2, 2, H - 2 - cs - 6);
+        cg.lineBetween(W - 2, H - 2, W - 2 - cs - 6, H - 2);
+        cg.lineBetween(W - 2, H - 2, W - 2, H - 2 - cs - 6);
     }
 
     // === GAME OBJECTS ===
@@ -491,10 +876,10 @@ export default class GameScene extends Phaser.Scene {
             const w = o.w * this.playW, h = o.h * this.playH;
             const c = Phaser.Display.Color.HexStringToColor(o.color || '#3a3a4e').color;
             const key = this.textures.exists(`obs_${o.type}`) ? `obs_${o.type}` : 'obs_rock';
-            const s = this.add.tileSprite(p.x, p.y, w, h, key).setTint(c).setDepth(2);
+            const s = this.add.tileSprite(p.x, p.y, w, h, key).setTint(c).setAlpha(0.45).setDepth(2);
             this.physics.add.existing(s, true);
             this.obstacleGroup.add(s);
-            this.add.ellipse(p.x, p.y + h / 2 + 2, w * 0.7, 4, 0x000000, 0.2).setDepth(1);
+            this.add.ellipse(p.x, p.y + h / 2 + 2, w * 0.7, 4, 0x000000, 0.15).setDepth(1);
         }
     }
 
@@ -503,12 +888,17 @@ export default class GameScene extends Phaser.Scene {
             const p = this.norm(n.x, n.y);
             const c = Phaser.Display.Color.HexStringToColor(n.color || '#aaaaff').color;
             const spriteType = n.sprite_type || 'civilian';
-            const key = this.textures.exists(`npc_${spriteType}`) ? `npc_${spriteType}` : 'npc_civilian';
+            const aiSpriteKey = 'sprite_ai_' + (n.name || n.id).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+            const key = this.textures.exists(aiSpriteKey) ? aiSpriteKey
+                : this.textures.exists(`npc_${spriteType}`) ? `npc_${spriteType}` : 'npc_civilian';
 
             this.add.ellipse(p.x, p.y + 4, 36, 18, c, 0.08).setDepth(3);
             this.add.ellipse(p.x, p.y + 16, 18, 6, 0x000000, 0.3).setDepth(4);
 
-            const sprite = this.physics.add.staticSprite(p.x, p.y, key).setTint(c).setDepth(5);
+            const useAI = key === aiSpriteKey;
+            const sprite = this.physics.add.staticSprite(p.x, p.y, key).setDepth(5);
+            if (useAI) sprite.setDisplaySize(40, 50);
+            else sprite.setTint(c);
             this.npcGroup.add(sprite);
 
             const nameStr = n.name || n.id;
@@ -519,7 +909,6 @@ export default class GameScene extends Phaser.Scene {
                 fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#ffffff'
             }).setOrigin(0.5).setDepth(7);
 
-            // Emotion + shop/quest indicators
             const indicators = [];
             if (n.has_quest) indicators.push({ t: '!', c: '#ffff00' });
             if (n.shop_inventory) indicators.push({ t: '$', c: '#44ff44' });
@@ -556,7 +945,11 @@ export default class GameScene extends Phaser.Scene {
             const aura = this.add.ellipse(p.x, p.y + 4, 44, 22, 0xff0000, 0.06).setDepth(3);
             this.tweens.add({ targets: aura, alpha: 0.15, scaleX: 1.3, scaleY: 1.3, duration: 800, yoyo: true, repeat: -1 });
 
-            const sprite = this.physics.add.staticSprite(p.x, p.y, 'enemy').setTint(c).setDepth(5).setScale(0.8);
+            const aiSpriteKey = 'sprite_ai_' + (e.name || e.id).replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+            const enemyTexKey = this.textures.exists(aiSpriteKey) ? aiSpriteKey : 'enemy';
+            const sprite = this.physics.add.staticSprite(p.x, p.y, enemyTexKey).setDepth(5).setScale(0.8);
+            if (enemyTexKey === aiSpriteKey) sprite.setDisplaySize(40, 40);
+            else sprite.setTint(c);
             this.enemyGroup.add(sprite);
 
             const nameW = (e.name?.length || 5) * 6 + 8;
@@ -1132,16 +1525,13 @@ export default class GameScene extends Phaser.Scene {
         ui.title = this.add.text(W / 2, 50, 'JOURNAL', { fontFamily: '"Press Start 2P"', fontSize: '14px', color: '#ffff00' }).setOrigin(0.5).setDepth(61);
 
         const lines = [];
-        // Stats
         lines.push(this.add.text(50, 80, `LV ${storyState.level}  HP ${storyState.hp}/${storyState.maxHp}  ATK ${storyState.getATK()}  DEF ${storyState.getDEF()}`, { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#ffffff' }).setDepth(61));
         lines.push(this.add.text(50, 95, `Alignment: ${storyState.getMoralAlignment().toUpperCase()}  |  Kills: ${storyState.reputation.kills}  Spares: ${storyState.reputation.spares}`, { fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#888888' }).setDepth(61));
 
-        // Equipment
         const wp = storyState.equipment.weapon;
         const ar = storyState.equipment.armor;
         lines.push(this.add.text(50, 115, `Weapon: ${wp ? wp.name + ' (+' + wp.bonus + ')' : 'None'}  Armor: ${ar ? ar.name + ' (+' + ar.bonus + ')' : 'None'}`, { fontFamily: '"Press Start 2P"', fontSize: '6px', color: '#aaaaaa' }).setDepth(61));
 
-        // Active quests
         lines.push(this.add.text(50, 140, '── ACTIVE QUESTS ──', { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#44aaff' }).setDepth(61));
         let y = 158;
         for (const q of storyState.activeQuests) {
@@ -1154,7 +1544,6 @@ export default class GameScene extends Phaser.Scene {
             y += 16;
         }
 
-        // Inventory
         lines.push(this.add.text(50, y + 10, '── INVENTORY ──', { fontFamily: '"Press Start 2P"', fontSize: '7px', color: '#ffaa22' }).setDepth(61));
         y += 28;
         if (storyState.inventory.length === 0) {

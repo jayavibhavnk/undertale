@@ -1,0 +1,164 @@
+{
+  "playerName": "dh4",
+  "theme": "cyberpunk",
+  "soulColor": "#FF8C00",
+  "soulTrait": "Bravery",
+  "portraitUrl": "http://localhost:8081/api/assets/portraits/cc1a4e95_portrait.png",
+  "endingType": {
+    "id": "genocide",
+    "title": "NO MERCY",
+    "desc": "You left nothing alive."
+  },
+  "endingNarration": {
+    "title": "Echoes in the Data Stream",
+    "narration": [
+      "The Oracle's core is silent, its light extinguished.",
+      "Dh4, the rogue operative, stood amidst the digital corpses.",
+      "No truth was found, only the void where knowledge resided.",
+      "Neo-Tokyo's secrets now rest with the fallen, forever unread."
+    ],
+    "epilogue": "The mega-corporations continued their reign, the city's shadows growing longer with no one left to expose them."
+  },
+  "roomNumber": 3,
+  "maxRooms": 3,
+  "level": 5,
+  "storySummary": [
+    "Room 1: \"Neon Alleyway\" — Rain slicks the grimy pavement of this forgotten alley, the glow of distant mega-towers barely penetrating the oppressive gloom.",
+    "Completed quest: \"Recover Stolen Data\"",
+    "Defeated enemy \"corrupt_guard_01\"",
+    "Room 2: \"Sector 7 Hub\" — The constant hum of the city is a low thrum beneath the flickering neon advertisements, a stark contrast to the alley's silence.",
+    "Defeated enemy \"security_drone_02\"",
+    "Defeated enemy \"cyber_ninja_01\"",
+    "Room 3: \"Oracle's Sanctum\" — A vast, humming chamber bathed in the cool, ethereal glow of the Oracle's core. The air crackles with raw data.",
+    "Defeated enemy \"corporate_enforcer_prime_01\"",
+    "Finale: defeated the final enemy"
+  ],
+  "storyLog": [
+    "quest_started:data_theft_01",
+    "picked_up:stolen_data_chip",
+    "found:stolen_data_chip",
+    "quest_complete:data_theft_01",
+    "picked_up:fixer_payment_01",
+    "defeated:corrupt_guard_01",
+    "picked_up:stolen_data_chip",
+    "found:stolen_data_chip",
+    "exited:right:Sector 7 Main",
+    "quest_started:oracle_lead_01",
+    "defeated:security_drone_02",
+    "picked_up:stim_pack_02",
+    "picked_up:emp_grenade_01",
+    "picked_up:emp_grenade_01",
+    "defeated:cyber_ninja_01",
+    "exited:right:Market District",
+    "defeated:corporate_enforcer_prime_01"
+  ],
+  "roomsVisited": [
+    "neo_tokyo_sector_7_alley_01",
+    "neo_tokyo_sector_7_main_01",
+    "neo_tokyo_oracle_chamber_01"
+  ],
+  "uniqueNames": {
+    "rooms": [
+      "Neon Alleyway",
+      "Sector 7 Hub",
+      "Oracle's Sanctum"
+    ],
+    "npcs": [
+      "Kaito",
+      "Mama Bytes",
+      "Jax",
+      "Sparky",
+      "The Oracle"
+    ],
+    "enemies": [
+      "Corrupt Guard",
+      "Cyber Ninja",
+      "Security Drone",
+      "Enforcer Prime"
+    ]
+  },
+  "reputation": {
+    "kills": 4,
+    "spares": 0,
+    "quests_done": 1
+  },
+  "moralAlignment": "violent",
+  "gold": 75,
+  "completedQuests": [
+    "data_theft_01"
+  ],
+  "npcsDefeated": [
+    "corrupt_guard_01",
+    "security_drone_02",
+    "cyber_ninja_01",
+    "corporate_enforcer_prime_01"
+  ],
+  "npcsSpared": [],
+  "npcsMet": [
+    "kaito_fixer",
+    "mama_bytes_vendor",
+    "jax_info_broker",
+    "sparky_vendor",
+    "oracle_ai_01"
+  ],
+  "cutsceneLog": [
+    {
+      "trigger": "first_room",
+      "videoUrl": "http://localhost:8081/api/videos/cyb_8875ea75_first_room_b3e920.mp4",
+      "label": "The journey begins...",
+      "room": 1,
+      "timestamp": 1774729435782
+    },
+    {
+      "trigger": "boss_outcome_victory",
+      "videoUrl": "http://localhost:8081/api/videos/cyb_8875ea75_boss_outcome_victory_421127.mp4",
+      "label": "Defeated Corrupt Guard!",
+      "room": 1,
+      "timestamp": 1774729590068
+    },
+    {
+      "trigger": "exited right toward \"Sector 7 Main\"",
+      "videoUrl": "http://localhost:8081/api/videos/cyb_8875ea75_room_transition_84dd37.mp4",
+      "label": "Traveling to Sector 7 Hub...",
+      "room": 2,
+      "timestamp": 1774729761310
+    },
+    {
+      "trigger": "boss_outcome_victory",
+      "videoUrl": "http://localhost:8081/api/videos/cyb_8875ea75_boss_outcome_victory_d6c5bd.mp4",
+      "label": "Defeated Security Drone!",
+      "room": 2,
+      "timestamp": 1774729999222
+    },
+    {
+      "trigger": "boss_outcome_victory",
+      "videoUrl": "http://localhost:8081/api/videos/cyb_8875ea75_boss_outcome_victory_54e71c.mp4",
+      "label": "Defeated Cyber Ninja!",
+      "room": 2,
+      "timestamp": 1774730116534
+    },
+    {
+      "trigger": "exited right toward \"Market District\"",
+      "videoUrl": "http://localhost:8081/api/videos/cyb_8875ea75_room_transition_96fed5.mp4",
+      "label": "Traveling to Oracle's Sanctum...",
+      "room": 3,
+      "timestamp": 1774730162933
+    },
+    {
+      "trigger": "boss_outcome_victory",
+      "videoUrl": "http://localhost:8081/api/videos/cyb_8875ea75_boss_outcome_victory_efca37.mp4",
+      "label": "Defeated Enforcer Prime!",
+      "room": 3,
+      "timestamp": 1774730337317
+    }
+  ],
+  "sessionId": "f0cb499c8daf",
+  "game_id": "1ddc04fbcc",
+  "saved_at": 1774730351.587297,
+  "allSessionVideos": [
+    {
+      "cache_key": "f0cb499c8daf_first_room",
+      "video_url": "/api/videos/cyb_8875ea75_first_room_b3e920.mp4"
+    }
+  ]
+}

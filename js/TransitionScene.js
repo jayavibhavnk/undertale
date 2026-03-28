@@ -1,4 +1,24 @@
 import storyState from './storyState.js';
+import { loadTextureFromUrl, API_BASE } from './IntroSequenceScene.js';
+
+const ASSET_CACHE_KEY = 'undertale_asset_urls_v2';
+
+function _urlCache() {
+    try { return JSON.parse(localStorage.getItem(ASSET_CACHE_KEY) || '{}'); }
+    catch { return {}; }
+}
+
+function _cacheUrl(texKey, url) {
+    try {
+        const c = _urlCache();
+        c[texKey] = url;
+        localStorage.setItem(ASSET_CACHE_KEY, JSON.stringify(c));
+    } catch { /* storage full or unavailable */ }
+}
+
+function _getCachedUrl(texKey) {
+    return _urlCache()[texKey] || null;
+}
 
 const TIPS = {
     cyberpunk: ['Neon flickers in the rain...', 'Data flows through the wires...', 'The city never sleeps...', 'Trust no one in the undercity...'],
@@ -90,6 +110,12 @@ export default class TransitionScene extends Phaser.Scene {
             }
         });
 
+        const music = this.registry.get('musicManager');
+        if (music) {
+            const theme = storyState.theme || 'cyberpunk';
+            music.play(`loading_${theme}`, 1500);
+        }
+
         this.cameras.main.fadeIn(200);
         this.loadRoomAndCutscene();
     }
@@ -180,6 +206,22 @@ export default class TransitionScene extends Phaser.Scene {
             `Room ${storyState.roomNumber}: "${roomSpec.name}" — ${roomSpec.narration || 'explored'}`
         );
 
+        // --- Generate visual assets (backgrounds, portraits, sprites) in parallel ---
+        const bgTextureKey = `room_bg_${(roomSpec.room_id || 'unknown').replace(/[^a-z0-9]/gi, '_')}`;
+
+        this.genText.setText('Forging scene & characters...');
+        const bgPromise = this.generateBackground(roomSpec, bgTextureKey).catch(e => {
+            console.warn('Background gen failed:', e);
+            return null;
+        });
+        const portraitPromises = this.generateAllPortraits(roomSpec);
+        const spritePromises = this.generateAllSprites(roomSpec);
+
+        const [bgResult] = await Promise.allSettled([
+            bgPromise, ...portraitPromises, ...spritePromises,
+        ]);
+        this._backgroundUrl = bgResult.status === 'fulfilled' ? bgResult.value : null;
+
         // --- Wait for cutscene ---
         let cutsceneVideoUrl = null;
 
@@ -196,13 +238,15 @@ export default class TransitionScene extends Phaser.Scene {
         if (cutsceneVideoUrl && cutscenePlayer) {
             console.log('[transition] Playing cutscene:', cutsceneVideoUrl);
             this.genText.setText('Playing cutscene...');
+            const label = !this.trigger ? 'The journey begins...' : `Traveling to ${roomSpec.name || 'the next area'}...`;
+            storyState.logCutscene(this.trigger || 'first_room', cutsceneVideoUrl, label);
             this.time.delayedCall(300, async () => {
                 await cutscenePlayer.play(cutsceneVideoUrl);
-                this.transitionToGame(roomSpec);
+                this.transitionToGame(roomSpec, bgTextureKey);
             });
         } else {
             console.log('[transition] No cutscene available, proceeding to game');
-            this.time.delayedCall(500, () => this.transitionToGame(roomSpec));
+            this.time.delayedCall(500, () => this.transitionToGame(roomSpec, bgTextureKey));
         }
     }
 
@@ -291,6 +335,7 @@ export default class TransitionScene extends Phaser.Scene {
             const result = await cutsceneClient.requestCutscene(
                 this.trigger || 'The adventure begins', context,
                 this.exitDirection, this.exitLabel, this.roomName, this.roomMood,
+                this._backgroundUrl || '',
             );
             if (!result?.scene_id) return null;
             const status = await cutsceneClient.waitForCutscene(
@@ -301,6 +346,44 @@ export default class TransitionScene extends Phaser.Scene {
             return (status.status === 'complete' && status.video_url) ? status.video_url : null;
         } catch (err) {
             console.warn('[transition] Fresh cutscene error:', err);
+            return null;
+        }
+    }
+
+    async generateCutscene(cutsceneClient, backgroundUrl) {
+        const context = storyState.toContext();
+        try {
+            const result = await cutsceneClient.requestCutscene(
+                this.trigger || 'The adventure begins',
+                context,
+                this.exitDirection,
+                this.exitLabel,
+                this.roomName,
+                this.roomMood,
+                backgroundUrl || '',
+            );
+            if (!result?.scene_id) return null;
+
+            const status = await cutsceneClient.waitForCutscene(
+                result.scene_id,
+                (s) => {
+                    if (s.progress && this.barProgress < 90) {
+                        const mapped = 50 + (s.progress / 100) * 45;
+                        if (mapped > this.barProgress) {
+                            this.barProgress = mapped;
+                            this.updateBar();
+                        }
+                    }
+                },
+                180000
+            );
+
+            if (status.status === 'complete' && status.video_url) {
+                return status.video_url;
+            }
+            return null;
+        } catch (err) {
+            console.warn('Cutscene request error:', err);
             return null;
         }
     }
@@ -332,10 +415,142 @@ export default class TransitionScene extends Phaser.Scene {
         return await gemini.generateRoom(context, this.trigger);
     }
 
-    transitionToGame(roomSpec) {
+    // ── Visual asset generation ──
+
+    async generateBackground(roomSpec, textureKey) {
+        const apiKey = this.registry.get('apiKey');
+        if (!apiKey) return null;
+
+        const cached = _getCachedUrl(textureKey);
+        if (cached) {
+            try {
+                const ok = await loadTextureFromUrl(this, textureKey, cached);
+                if (ok) return cached.replace(API_BASE, '');
+            } catch { /* stale, regenerate */ }
+        }
+
+        try {
+            const resp = await fetch(`${API_BASE}/api/generate-background`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    api_key: apiKey,
+                    theme: storyState.theme || 'cyberpunk',
+                    room_name: roomSpec.name || roomSpec.room_id || 'Unknown',
+                    mood: roomSpec.mood || 'mysterious',
+                    narration: roomSpec.narration || ''
+                })
+            });
+            if (!resp.ok) return null;
+            const data = await resp.json();
+            if (data.background_url) {
+                const fullUrl = `${API_BASE}${data.background_url}`;
+                await loadTextureFromUrl(this, textureKey, fullUrl);
+                _cacheUrl(textureKey, fullUrl);
+                return data.background_url;
+            }
+            return null;
+        } catch (e) {
+            console.warn('Background generation error:', e);
+            return null;
+        }
+    }
+
+    generateAllPortraits(roomSpec) {
+        const apiKey = this.registry.get('apiKey');
+        if (!apiKey) return [];
+        const theme = storyState.theme || 'cyberpunk';
+        const npcs = roomSpec.npcs || [];
+        const enemies = roomSpec.enemies || [];
+        const promises = [];
+
+        const mkKey = (name) => 'portrait_' + name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase() + '_ai';
+
+        for (const n of npcs) {
+            const key = mkKey(n.name || n.id);
+            if (this.textures.exists(key)) continue;
+            promises.push(this._generateOnePortrait(apiKey, key, n.name || n.id, theme, 'npc', n.description || n.emotion || '', n.color || ''));
+        }
+        for (const e of enemies) {
+            if (storyState.npcsDefeated?.includes(e.id) || storyState.npcsSpared?.includes(e.id)) continue;
+            const key = mkKey(e.name || e.id);
+            if (this.textures.exists(key)) continue;
+            promises.push(this._generateOnePortrait(apiKey, key, e.name || e.id, theme, 'enemy', e.description || '', e.color || ''));
+        }
+        return promises;
+    }
+
+    async _generateOnePortrait(apiKey, texKey, name, theme, role, description, color) {
+        return this._loadFromCacheOrGenerate(texKey, '/api/generate-bustup',
+            { api_key: apiKey, name, theme, role, description, color },
+            'portrait_url', 'portrait');
+    }
+
+    generateAllSprites(roomSpec) {
+        const apiKey = this.registry.get('apiKey');
+        if (!apiKey) return [];
+        const theme = storyState.theme || 'cyberpunk';
+        const npcs = roomSpec.npcs || [];
+        const enemies = roomSpec.enemies || [];
+        const promises = [];
+
+        const mkKey = (name) => 'sprite_ai_' + name.replace(/[^a-zA-Z0-9]/g, '_').toLowerCase();
+
+        for (const n of npcs) {
+            const key = mkKey(n.name || n.id);
+            if (this.textures.exists(key)) continue;
+            promises.push(this._generateOneSprite(apiKey, key, n.name || n.id, theme, 'npc', n.description || '', n.color || ''));
+        }
+        for (const e of enemies) {
+            if (storyState.npcsDefeated?.includes(e.id) || storyState.npcsSpared?.includes(e.id)) continue;
+            const key = mkKey(e.name || e.id);
+            if (this.textures.exists(key)) continue;
+            promises.push(this._generateOneSprite(apiKey, key, e.name || e.id, theme, 'enemy', e.description || '', e.color || ''));
+        }
+        return promises;
+    }
+
+    async _generateOneSprite(apiKey, texKey, name, theme, role, description, color) {
+        return this._loadFromCacheOrGenerate(texKey, '/api/generate-sprite',
+            { api_key: apiKey, name, theme, role, description, color },
+            'sprite_url', 'sprite');
+    }
+
+    async _loadFromCacheOrGenerate(texKey, endpoint, body, urlField, label) {
+        const cached = _getCachedUrl(texKey);
+        if (cached) {
+            try {
+                const ok = await loadTextureFromUrl(this, texKey, cached);
+                if (ok) return;
+            } catch { /* stale cache, fall through to regenerate */ }
+        }
+        try {
+            const res = await fetch(`${API_BASE}${endpoint}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            if (!res.ok) return;
+            const data = await res.json();
+            const relUrl = data[urlField];
+            if (relUrl) {
+                const fullUrl = `${API_BASE}${relUrl}`;
+                await loadTextureFromUrl(this, texKey, fullUrl);
+                _cacheUrl(texKey, fullUrl);
+            }
+        } catch (e) {
+            console.warn(`[${label}] ${body.name || texKey}:`, e);
+        }
+    }
+
+    transitionToGame(roomSpec, bgTextureKey) {
         this.cameras.main.fadeOut(500, 0, 0, 0);
         this.cameras.main.once('camerafadeoutcomplete', () => {
-            this.scene.start('GameScene', { roomSpec, entryDirection: this.entryDirection });
+            this.scene.start('GameScene', {
+                roomSpec,
+                entryDirection: this.entryDirection,
+                bgTextureKey: bgTextureKey || null
+            });
         });
     }
 
@@ -350,8 +565,14 @@ export default class TransitionScene extends Phaser.Scene {
                 storyState.chapter++;
                 storyState.trackNames(roomSpec);
                 storyState.addSummary(`Room ${storyState.roomNumber}: "${roomSpec.name}" — ${roomSpec.narration || 'explored'}`);
+                const bgKey = `room_bg_${(roomSpec.room_id || 'retry').replace(/[^a-z0-9]/gi, '_')}`;
+                await Promise.allSettled([
+                    this.generateBackground(roomSpec, bgKey).catch(() => {}),
+                    ...this.generateAllPortraits(roomSpec),
+                    ...this.generateAllSprites(roomSpec),
+                ]);
                 this.finishBar();
-                this.time.delayedCall(600, () => this.transitionToGame(roomSpec));
+                this.time.delayedCall(600, () => this.transitionToGame(roomSpec, bgKey));
             } catch (err2) {
                 console.error('Retry failed:', err2);
                 this.genText.setText('FAILED').setColor('#ff4444');

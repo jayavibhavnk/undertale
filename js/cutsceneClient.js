@@ -146,7 +146,7 @@ export class CutsceneClient {
     // ── Legacy cutscene endpoint ──
 
     async requestCutscene(trigger, storyContext, exitDirection, exitLabel,
-                          roomName, roomMood) {
+                          roomName, roomMood, backgroundImage) {
         if (!this.ready) return null;
         const res = await fetch(`${API_BASE}/api/cutscene`, {
             method: 'POST',
@@ -158,6 +158,7 @@ export class CutsceneClient {
                 exit_label: exitLabel || '',
                 room_name: roomName || '',
                 room_mood: roomMood || '',
+                background_image: backgroundImage || '',
             }),
         });
         if (!res.ok) return null;
