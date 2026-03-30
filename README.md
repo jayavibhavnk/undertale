@@ -1,4 +1,4 @@
-# Unifactory
+# Undertale
 
 **An AI-powered 2D story RPG where every playthrough is entirely unique.** Built for GlitchHacks UCLA — Unifactory uses Google's Gemini API as a real-time game master, Gemini Image models as an on-demand art forge, and Google's Veo model to generate cinematic video cutscenes on the fly. Every room, character portrait, NPC, quest, enemy, story beat, and cutscene is created live. No two games are ever the same.
 
